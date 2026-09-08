@@ -122,7 +122,7 @@ export default function AboutPage({ c }) {
         style={{ background: c.footerBg }}
       >
         <div>
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex ite  ms-center gap-2 mb-3">
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center"
               style={{ background: c.green }}
