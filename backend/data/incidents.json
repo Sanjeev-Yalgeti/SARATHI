@@ -1,5 +1,17 @@
 [
   {
+    "id": "KAM-01",
+    "lat": 26.1902,
+    "lng": 91.7308,
+    "type": "landslide",
+    "severity": "HIGH",
+    "eventDate": "2026-07-28",
+    "road": "Navagraha Hill road, Guwahati",
+    "district": "Kamrup Metropolitan",
+    "note": "Hillside slip near depot per ASDMA landslide report 28-07-2026; verify coords on Maps",
+    "status": "open"
+  },
+  {
     "id": "ASDMA-01",
     "lat": 26.58,
     "lng": 93.55,
@@ -21,18 +33,6 @@
     "road": "NH27 near Nagaon",
     "district": "Nagaon",
     "note": "Road over-topped, slow movement only (ASDMA breach table)",
-    "status": "open"
-  },
-  {
-    "id": "ASDMA-03",
-    "lat": 26.62,
-    "lng": 93.85,
-    "type": "landslide",
-    "severity": "RED",
-    "eventDate": "2026-07-28",
-    "road": "NH37 Naginijan stretch",
-    "district": "Golaghat",
-    "note": "Debris on carriageway, clearance crew on site",
     "status": "open"
   },
   {
@@ -72,15 +72,15 @@
     "status": "open"
   },
   {
-    "id": "ASDMA-07",
-    "lat": 26.7,
-    "lng": 93.9,
-    "type": "landslide",
+    "id": "ASDMA-08",
+    "lat": 26.6,
+    "lng": 93.62,
+    "type": "overtop",
     "severity": "HIGH",
     "eventDate": "2026-07-28",
-    "road": "NH37 Borghat section",
+    "road": "NH37 Bagori (Kaziranga) stretch",
     "district": "Golaghat",
-    "note": "Slip above road-cut, high landslide chance",
+    "note": "Floodwater over carriageway near Bagori range (placeholder pending bulletin row)",
     "status": "open"
   },
   {

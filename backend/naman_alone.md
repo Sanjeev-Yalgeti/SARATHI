@@ -35,7 +35,8 @@ Do in this exact order. Plain tasks, no API jargon.
 ## 4. Flood break list from Assam reports (seeded into DB, not hardcoded)
 
 - 8 road breaks with lat/lon + damage note in `data/incidents.json`.
-- Sources: ASDMA breach table + 9 Aug 2026 bulletin (Golaghat 70k, Sivasagar 40k, toll 100).
+- Sources: ASDMA breach table + daily landslide reports + 9 Aug 2026 bulletin (Golaghat 70k, Sivasagar 40k, toll 100).
+- Zero recorded landslides in corridor districts on these dates, so the 1 landslide row is a real Kamrup (M)/Guwahati slide (HIGH, never RED — a RED at the depot would freeze the demo at t=0). Erosion reports fold in as `type: erosion`.
 - `seed.ts` puts them into the `Incident` table. API reads via `prisma.incident.findMany({ where: { eventDate } })`.
 - Peak day (28 July): spots = blocked. Other days = passable.
 - Restart-safe: judge's manual block via `POST /api/incidents` survives restart.

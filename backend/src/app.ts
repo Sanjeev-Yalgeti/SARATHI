@@ -6,6 +6,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import healthRouter from './routes/health.js';
+import incidentsRouter from './routes/incidents.js';
+import vehiclesRouter from './routes/vehicles.js';
 
 const app = express();
 
@@ -25,6 +27,8 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/uploads', express.static(join(dirname(fileURLToPath(import.meta.url)), '..', 'uploads')));
 
 app.use('/api/health', healthRouter);
+app.use('/api/vehicles', vehiclesRouter);
+app.use('/api/incidents', incidentsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
