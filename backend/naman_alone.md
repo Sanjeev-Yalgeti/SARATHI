@@ -21,8 +21,8 @@ Do in this exact order. Plain tasks, no API jargon.
 
 - Truck 1: rice + medicines → Golaghat relief camp
 - Truck 2: medicines → Sivasagar
-- Truck 3: fuel → Nagaon → Sivasagar
-- Fixed starting points: Guwahati (26.1844, 91.7458).
+- Truck 3: fuel → Sivasagar via Nagaon
+- All 3 trucks start at Guwahati depot (26.1844, 91.7458). Nagaon is a waypoint on truck 3's route, not a second depot.
 - Trucks stay in a `Map` (not in DB — they move every 2 sec, no need to save each dot).
 - Sanjeev can render dots today via `GET /api/vehicles`.
 
