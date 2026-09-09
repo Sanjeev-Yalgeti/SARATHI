@@ -1,118 +1,77 @@
-import { useState } from 'react'
+import { useState } from "react";
+import { palette } from "./constants";
+import TopNav from "./components/TopNav";
 
-import './App.css'
+import HomePage from "./pages/HomePage";
+import LiveMapPage from "./pages/LiveMapPage";
+import TripsPage from "./pages/TripsPage";
+import AlertsPage from "./pages/AlertsPage";
+import ReportsPage from "./pages/ReportsPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
+import SimulationPage from "./pages/SimulationPage";
+import ResourcesPage from "./pages/ResourcesPage";
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function SarathiApp() {
+  const [theme, setTheme] = useState("light");
+  const [active, setActive] = useState("Home");
+
+  // Sub-page states for each section
+  const [liveMapSub, setLiveMapSub] = useState("Map Overview");
+  const [tripsSub, setTripsSub] = useState("My Trips");
+  const [alertsSub, setAlertsSub] = useState("All Alerts");
+  const [reportsSub, setReportsSub] = useState("Field Reports");
+  const [analyticsSub, setAnalyticsSub] = useState("Driver Simulation");
+  const [simulationSub, setSimulationSub] = useState("Driver Simulation");
+  const [resourcesSub, setResourcesSub] = useState("Guidelines");
+
+  const c = palette[theme];
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-         
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div style={{ background: c.pageBg, minHeight: "100vh", minwidth: "100vw" }} className="font-sans">
+      {/* Fixed overlay nav — sits above every page */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-transparent h-[50%]">
+        <TopNav
+          c={c}
+          active={active}
+          setActive={setActive}
+          theme={theme}
+          setTheme={setTheme}
+        />
+      </div>
 
-      <div className="ticks"></div>
+      {/* pt-18 offsets the fixed nav; pt-10 adds breathing room at the top of every page */}
+      <div className="pt-18 pt-10">
+        {active === "Home" && <HomePage c={c} />}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {active === "Live Map" && (
+          <LiveMapPage c={c} sub={liveMapSub} setSub={setLiveMapSub} />
+        )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        {active === "Trips" && (
+          <TripsPage c={c} sub={tripsSub} setSub={setTripsSub} />
+        )}
+
+        {active === "Alerts" && (
+          <AlertsPage c={c} sub={alertsSub} setSub={setAlertsSub} />
+        )}
+
+        {active === "Reports" && (
+          <ReportsPage c={c} sub={reportsSub} setSub={setReportsSub} />
+        )}
+
+        {active === "Analytics" && (
+          <AnalyticsPage c={c} sub={analyticsSub} setSub={setAnalyticsSub} />
+        )}
+
+        {active === "Simulation" && (
+          <SimulationPage c={c} sub={simulationSub} setSub={setSimulationSub} />
+        )}
+
+        {active === "Resources" && (
+          <ResourcesPage c={c} sub={resourcesSub} setSub={setResourcesSub} />
+        )}
+
+      </div>
+    </div>
+  );
 }
-
-export default App
