@@ -1,17 +1,19 @@
 import { Moon, Sun, User } from "lucide-react";
 import { NAV_ITEMS } from "../constants";
+const LightLogo = '/lightLogo.png'
+const DarkLogo = '/darkLogo.png'
 
 export default function TopNav({ c, active, setActive, theme, setTheme }) {
     return (
 
         <div
-            className="w-full h-[15%] flex items-center justify-between px-6 py-3 bg-transparent"
+            className="w-full h-[20%] flex items-center justify-between px-6 py-3 bg-transparent"
         >
             <div className="flex justify-center items-center ">
-                <img src='../../public/logo.png' className="h-[75%] w-[75%] px-5"></img>
+                <img src={theme === 'light' ? LightLogo : DarkLogo} className="h-[75%] w-[75%] px-5"></img>
             </div>
 
-            <nav className="hidden md:flex items-center gap-6 text-[15px] font-medium">
+            <nav className="hidden md:flex items-center gap-14 text-lg font-medium" style={{ fontFamily: "'Poppins', sans-serif" }}>
                 {NAV_ITEMS.map((item) => (
                     <button
                         key={item}
@@ -28,7 +30,7 @@ export default function TopNav({ c, active, setActive, theme, setTheme }) {
                 ))}
             </nav>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 hover:">
                 <button
                     onClick={() => setTheme(theme === "light" ? "dark" : "light")}
                     className="w-9 h-9 rounded-full flex items-center justify-center border"

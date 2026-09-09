@@ -8,8 +8,8 @@ import TripsPage from "./pages/TripsPage";
 import AlertsPage from "./pages/AlertsPage";
 import ReportsPage from "./pages/ReportsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import SimulationPage from "./pages/SimulationPage";
 import ResourcesPage from "./pages/ResourcesPage";
-import AboutPage from "./pages/AboutPage";
 
 export default function SarathiApp() {
   const [theme, setTheme] = useState("light");
@@ -21,12 +21,13 @@ export default function SarathiApp() {
   const [alertsSub, setAlertsSub] = useState("All Alerts");
   const [reportsSub, setReportsSub] = useState("Field Reports");
   const [analyticsSub, setAnalyticsSub] = useState("Driver Simulation");
+  const [simulationSub, setSimulationSub] = useState("Driver Simulation");
   const [resourcesSub, setResourcesSub] = useState("Guidelines");
 
   const c = palette[theme];
 
   return (
-    <div style={{ background: c.pageBg, minHeight: "100vh" }} className="font-sans">
+    <div style={{ background: c.pageBg, minHeight: "100vh", minwidth: "100vw" }} className="font-sans">
       {/* Fixed overlay nav — sits above every page */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-transparent h-[50%]">
         <TopNav
@@ -39,7 +40,7 @@ export default function SarathiApp() {
       </div>
 
       {/* pt matches the nav height so content isn't hidden under it */}
-      <div className="pt-18 max-w-7xl mx-auto">
+      <div className="pt-18 ">
         {active === "Home" && <HomePage c={c} />}
 
         {active === "Live Map" && (
@@ -62,11 +63,14 @@ export default function SarathiApp() {
           <AnalyticsPage c={c} sub={analyticsSub} setSub={setAnalyticsSub} />
         )}
 
+        {active === "Simulation" && (
+          <SimulationPage c={c} sub={simulationSub} setSub={setSimulationSub} />
+        )}
+
         {active === "Resources" && (
           <ResourcesPage c={c} sub={resourcesSub} setSub={setResourcesSub} />
         )}
 
-        {active === "About SARATHI" && <AboutPage c={c} />}
       </div>
     </div>
   );

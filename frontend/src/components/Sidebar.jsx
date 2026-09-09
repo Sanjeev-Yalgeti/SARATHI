@@ -1,7 +1,7 @@
 export default function Sidebar({ c, title, items, active, setActive }) {
   return (
     <div
-      className="w-64 shrink-0 rounded-2xl p-5 mr-6"
+      className="w-64 shrink-0 rounded-r-2xl p-5 mr-6"
       style={{ background: c.sidebarBg }}
     >
       <h2 className="text-white text-2xl font-extrabold mb-4">{title}</h2>

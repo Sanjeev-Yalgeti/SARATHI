@@ -47,6 +47,7 @@ export const NAV_ITEMS = [
   "Alerts",
   "Reports",
   "Analytics",
+  "Simulation",
   "Resources",
-  "About SARATHI",
+
 ];
