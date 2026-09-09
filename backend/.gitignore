@@ -32,6 +32,11 @@ prisma/dev.db*
 *.db-journal
 dev.db*
 
+# Private task split docs — internal planning, never public
+naman.md
+naman_alone.md
+aryan.md
+
 # Misc
 coverage/
 .DS_Store
