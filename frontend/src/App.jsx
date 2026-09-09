@@ -39,8 +39,8 @@ export default function SarathiApp() {
         />
       </div>
 
-      {/* pt matches the nav height so content isn't hidden under it */}
-      <div className="pt-18 ">
+      {/* pt-18 offsets the fixed nav; pt-10 adds breathing room at the top of every page */}
+      <div className="pt-18 pt-10">
         {active === "Home" && <HomePage c={c} />}
 
         {active === "Live Map" && (

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Dropdown from "../components/Dropdown";
 
@@ -8,7 +9,20 @@ const SIDEBAR_ITEMS = [
   "Download Reports",
 ];
 
+const NE_STATES = [
+  "Arunachal Pradesh",
+  "Assam",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Sikkim",
+  "Tripura",
+];
+
 export default function ReportsPage({ c, sub, setSub }) {
+  const [selectedState, setSelectedState] = useState(null);
+
   return (
     <div className="flex">
       <Sidebar c={c} title="Reports" items={SIDEBAR_ITEMS} active={sub} setActive={setSub} />
@@ -18,7 +32,13 @@ export default function ReportsPage({ c, sub, setSub }) {
             Field Reports
           </h1>
           <div className="flex gap-3">
-            <Dropdown c={c} label="All States" />
+            <Dropdown
+              c={c}
+              label="All States"
+              options={NE_STATES}
+              value={selectedState}
+              onChange={setSelectedState}
+            />
             <Dropdown c={c} label="All Types" />
             <Dropdown c={c} label="Today" />
           </div>
