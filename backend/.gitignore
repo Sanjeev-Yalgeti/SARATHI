@@ -27,6 +27,13 @@ uploads/*
 *.shp.zip
 *.gpkg.zip
 
+# Prisma SQLite runtime DB — never commit, recreated via migrate + seed (step 0)
+prisma/dev.db*
+*.db-journal
+dev.db*
+
 # Misc
 coverage/
 .DS_Store
+
+/src/generated/prisma

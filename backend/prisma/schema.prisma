@@ -1,0 +1,67 @@
+// Prisma schema — SARATHI prototype (SQLite file DB, PostGIS-ready).
+// Keep 3 models only. No PostGIS types yet. All fields use portable
+// types so `provider` can switch to `postgresql` later without touching routes.
+// See BACKEND_TASKS.md "Prisma contract" + naman_alone.md step 0.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Flood / landslide road break. Seed source: backend/data/incidents.json.
+// Trucks stay in-memory; only incidents persist. Query by eventDate:
+// prisma.incident.findMany({ where: { eventDate } })
+model Incident {
+  id        String   @id // stable seed id, e.g. "ASDMA-01"
+  lat       Float
+  lng       Float
+  type      String // breach | landslide | overtop | erosion
+  severity  String // LOW | MEDIUM | HIGH | RED
+  eventDate String // YYYY-MM-DD as text (keeps SQLite/Postgres identical)
+  road      String?
+  district  String?
+  note      String?
+  status    String   @default("open") // open | processing | resolved
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventDate])
+}
+
+// Crowd/field photo report. Photo file lives in uploads/, row lives here.
+model FieldReport {
+  id        String   @id @default(cuid())
+  lat       Float
+  lng       Float
+  type      String
+  severity  String
+  note      String
+  photoUrl  String?
+  eventDate String // YYYY-MM-DD as text
+  createdAt DateTime @default(now())
+
+  @@index([eventDate])
+}
+
+// 10-min cache for live weather / risk snapshots (Google → fallback).
+// `payload` is a JSON string (not Json type) to stay SQLite/Postgres portable.
+model RiskCache {
+  id          Int      @id @default(autoincrement())
+  lat         Float
+  lng         Float
+  eventDate   String // YYYY-MM-DD as text; "" when not date-scoped
+  score       Int? // 0-100 weighted risk
+  level       String? // LOW | MEDIUM | HIGH | RED
+  rainfall    Float? // mm (24h)
+  probability Float? // 0-1 landslide probability
+  source      String? // google | openmeteo | imd | ml | heuristic
+  payload     String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([lat, lng, eventDate])
+  @@index([eventDate])
+}

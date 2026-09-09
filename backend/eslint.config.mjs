@@ -5,6 +5,7 @@
 import js from '@eslint/js';
 import { defineConfig } from 'eslint/config';
 import eslintConfigPrettier from 'eslint-config-prettier/flat';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig([
@@ -15,7 +16,14 @@ export default defineConfig([
   ...tseslint.configs.recommended,
   eslintConfigPrettier,
   {
-    files: ['**/*.ts'],
+    // Plain-JS backend files run on Node — provide Node globals (process, console, …)
+    files: ['**/*.js'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    files: ['**/*.ts', '**/*.js'],
     rules: {
       // allow unused function args prefixed with _ (e.g. Express `next`)
       '@typescript-eslint/no-unused-vars': [
