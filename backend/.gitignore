@@ -1,7 +1,32 @@
+# Dependencies
 node_modules/
-.env
-.env.*.local
-dist/
+
+# Build output (tsc outDir)
 build/
+dist/
+
+# TypeScript
+*.tsbuildinfo
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
 *.log
+npm-debug.log*
+
+# Uploads (runtime user content) — keep the folder via .gitkeep
+uploads/*
+!uploads/.gitkeep
+
+# Large geo/data artifacts — never commit (see BACKEND_TASKS.md §5.4)
+*.pbf
+*.shp.zip
+*.gpkg.zip
+
+# Misc
+coverage/
 .DS_Store

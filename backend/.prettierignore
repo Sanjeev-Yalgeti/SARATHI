@@ -1,0 +1,10 @@
+# Prettier ignore — formatting only, ESLint handles linting
+build/
+coverage/
+node_modules/
+package-lock.json
+uploads/*
+!uploads/.gitkeep
+*.pbf
+*.shp.zip
+*.gpkg.zip
