@@ -59,7 +59,7 @@ Decided integrations (locked):
 ## TRACK 3 — Simulation + Socket.io + Incidents (Person A)
 
 - [ ] 3.1 `data/incidents.json` (seed source, NOT runtime store): 8-10 real rows from ASDMA 01.07.2024 breach table + Aug 2026 bulletin (road name, lat, lng, type: breach/landslide/overtop, severity, eventDate). `prisma/seed.ts` loads these into `Incident` table.
-- [ ] 3.2 `data/scenario.json`: 3 trucks: `AS-01-FOOD-04 (rice+medicines, Guwahati→Golaghat camp)`, `AS-02-MED-11 (medicines, Guwahati→Sivasagar)`, `AS-03-FUEL-07 (fuel, Nagaon→Sivasagar)`. Each: origin, destination, cargoType, OSRM polyline file. Trucks stay in-memory, seeded at boot.
+- [ ] 3.2 `data/scenario.json`: 3 trucks: `AS-01-FOOD-04 (rice+medicines, Guwahati→Golaghat camp)`, `AS-02-MED-11 (medicines, Guwahati→Sivasagar)`, `AS-03-FUEL-07 (fuel, Guwahati→Sivasagar via Nagaon)`. Each: origin, destination, cargoType, OSRM polyline file. Trucks stay in-memory, seeded at boot.
 - [ ] 3.3 `simulation.service.ts`: fetch OSRM polyline once per truck, interpolate 1 point / 2 sec, emit `vehicle:update { vehicleId, lat, lng, speed, status }`. Query `prisma.incident.findMany({ where: { eventDate } })` for block spots → at flood index `speed=0, status=blocked`, emit `alert:blockage`.
 - [ ] 3.4 Sockets: `src/sockets/index.ts` — on `client:subscribe` send current positions; tick 2s. Events: `vehicle:update`, `alert:risk`, `alert:blockage`.
 - [ ] 3.5 Incidents API via Prisma: `GET /api/incidents?date=2026-08-09` → `prisma.incident.findMany`, `POST /api/incidents` → `prisma.incident.create` (manual blockage for demo button). Restart-safe.
