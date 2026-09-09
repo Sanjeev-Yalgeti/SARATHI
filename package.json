@@ -1,0 +1,20 @@
+{
+  "name": "sarathi",
+  "version": "1.0.0",
+  "description": "SARATHI:-Smart AI-based Regional Accessibility & Transport Hazard Intelligence\r <img width=\"1024\" height=\"739\" alt=\"f0175592-0e79-4e51-a448-c5eb720e4b24\" src=\"https://github.com/user-attachments/assets/71777ecf-76c5-402e-b9cf-41c9173c09b6\" />",
+  "homepage": "https://github.com/Sanjeev-Yalgeti/SARATHI#readme",
+  "bugs": {
+    "url": "https://github.com/Sanjeev-Yalgeti/SARATHI/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sanjeev-Yalgeti/SARATHI.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
