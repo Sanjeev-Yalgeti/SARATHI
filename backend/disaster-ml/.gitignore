@@ -1,5 +1,4 @@
-# Python virtualenv — never commit (recreate with python -m venv .venv)
-.venv/
+# Python bytecode — never commit
 __pycache__/
 *.pyc
 *.pyo
