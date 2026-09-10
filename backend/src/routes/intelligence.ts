@@ -1,8 +1,11 @@
 import { Router, type Request, type Response } from 'express';
+import { authenticate } from '../middleware/auth.js';
 import { predictRisk } from '../services/risk.service.js';
 import { getWeather } from '../services/weather.service.js';
 
 const router = Router();
+// FR-19: risk and weather are protected like every other data route.
+router.use(authenticate);
 function coordinate(value: unknown): number | null { const n = Number(value); return Number.isFinite(n) ? n : null; }
 
 router.get('/weather', async (req: Request, res: Response) => {
