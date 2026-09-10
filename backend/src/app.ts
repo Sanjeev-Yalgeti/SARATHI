@@ -12,6 +12,7 @@ import incidentsRouter from './routes/incidents.js';
 import intelligenceRouter from './routes/intelligence.js';
 import reportsRouter from './routes/reports.js';
 import routesRouter from './routes/routes.js';
+import simulationRouter from './routes/simulation.js';
 import tripsRouter from './routes/trips.js';
 import vehiclesRouter from './routes/vehicles.js';
 
@@ -40,6 +41,7 @@ app.use('/api', intelligenceRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/routes', routesRouter);
 app.use('/api/trips', tripsRouter);
+app.use('/api/simulation', simulationRouter);
 // Canonical endpoint documented for the dashboard. Keep `/api/routes/analyze`
 // working as a compatibility alias while clients move to this singular form.
 app.use('/api/route', routesRouter);

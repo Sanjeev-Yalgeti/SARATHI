@@ -69,6 +69,10 @@ async function getBlocks(): Promise<Array<{ id: string; lat: number; lng: number
 
 // Demo date switch (19-07 onset / 28-07 peak / 09-08 relief). Unblocks trucks
 // so the new date replays from current positions.
+export function getScenarioDate(): string {
+  return activeDate;
+}
+
 export function setScenarioDate(date: string): void {
   activeDate = date;
   cachedDate = null;
