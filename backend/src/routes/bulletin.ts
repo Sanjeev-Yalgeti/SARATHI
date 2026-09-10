@@ -1,13 +1,16 @@
 import { Router, type Request, type Response } from 'express';
 import PDFDocument from 'pdfkit';
 import { prisma } from '../services/db.js';
+import { authenticate } from '../middleware/auth.js';
 import { trucks } from '../services/trucks.js';
+import { DRIVER_RADIUS_KM, districtMatchesTrip, haversineKm, latestTrip, ownTruck } from '../utils/scope.js';
 
 // Bulletin stub (Step 8, Naman) — 1-page PDF from Prisma + truck status.
 // Aryan designs the real PDF later (pdf.service.ts); this keeps the same
 // endpoint + header/footer contract. Real PDF lines (Dhruv/Google data)
 // stay marked pending until Aryan fills them from RiskCache.
 const router = Router();
+router.use(authenticate);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_DATE = '2026-08-09';
@@ -44,7 +47,31 @@ router.get('/', async (req: Request, res: Response) => {
     prisma.fieldReport.findMany({ where: { eventDate: date }, orderBy: { createdAt: 'desc' } }),
     prisma.riskCache.findMany({ where: { eventDate: date }, orderBy: { updatedAt: 'desc' } }),
   ]);
-  const top = [...incidents]
+  // Driver scoping: latest assigned trip (district match) + radius fallback;
+  // own truck line only. Admin sees everything. History is never deleted.
+  const isDriver = req.user?.role === 'DRIVER';
+  const truck = isDriver ? ownTruck(req) : undefined;
+  const trip = isDriver && req.user ? await latestTrip(req.user.id) : null;
+  const visibleIncidents =
+    !isDriver || !truck
+      ? isDriver
+        ? []
+        : incidents
+      : incidents.filter(
+          (i) =>
+            (trip !== null && districtMatchesTrip(i.district, trip.origin, trip.destination)) ||
+            haversineKm(truck.lat, truck.lng, i.lat, i.lng) <= DRIVER_RADIUS_KM,
+        );
+  const visibleReports =
+    !isDriver || !truck
+      ? isDriver
+        ? []
+        : reports
+      : reports.filter(
+          (r) => haversineKm(truck.lat, truck.lng, r.lat, r.lng) <= DRIVER_RADIUS_KM,
+        );
+  const visibleTrucks = !isDriver ? [...trucks.values()] : truck ? [truck] : [];
+  const top = [...visibleIncidents]
     .sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
     .slice(0, 5);
 
@@ -62,14 +89,14 @@ router.get('/', async (req: Request, res: Response) => {
 
   doc.fontSize(13).text('Truck status');
   doc.fontSize(10);
-  for (const t of trucks.values()) {
+  for (const t of visibleTrucks) {
     doc.text(
       `${t.vehicleId} (${t.cargoType}): ${t.status}, speed ${t.speed} km/h at ${t.lat.toFixed(4)}, ${t.lng.toFixed(4)} -> ${t.destination}`
     );
   }
   doc.moveDown(0.5);
 
-  doc.fontSize(13).text(`Top incidents (${incidents.length} total)`);
+  doc.fontSize(13).text(`Top incidents (${visibleIncidents.length} total)`);
   doc.fontSize(10);
   if (top.length === 0) doc.text('None reported for this date.');
   for (const inc of top) {
@@ -79,10 +106,10 @@ router.get('/', async (req: Request, res: Response) => {
   }
   doc.moveDown(0.5);
 
-  doc.fontSize(13).text(`Field reports (${reports.length})`);
+  doc.fontSize(13).text(`Field reports (${visibleReports.length})`);
   doc.fontSize(10);
-  if (reports.length === 0) doc.text('None reported for this date.');
-  for (const r of reports.slice(0, 5)) {
+  if (visibleReports.length === 0) doc.text('None reported for this date.');
+  for (const r of visibleReports.slice(0, 5)) {
     doc.text(`[${r.severity}] ${r.type} at ${r.lat.toFixed(4)}, ${r.lng.toFixed(4)}: ${r.note}`);
   }
   doc.moveDown(0.5);

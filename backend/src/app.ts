@@ -5,11 +5,13 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import authRouter from './routes/auth.js';
 import bulletinRouter from './routes/bulletin.js';
 import healthRouter from './routes/health.js';
 import incidentsRouter from './routes/incidents.js';
 import reportsRouter from './routes/reports.js';
 import routesRouter from './routes/routes.js';
+import tripsRouter from './routes/trips.js';
 import vehiclesRouter from './routes/vehicles.js';
 
 const app = express();
@@ -30,10 +32,12 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/uploads', express.static(join(dirname(fileURLToPath(import.meta.url)), '..', 'uploads')));
 
 app.use('/api/health', healthRouter);
+app.use('/api/auth', authRouter); // public — login lives here
 app.use('/api/vehicles', vehiclesRouter);
 app.use('/api/incidents', incidentsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/routes', routesRouter);
+app.use('/api/trips', tripsRouter);
 app.use('/api/bulletin.pdf', bulletinRouter);
 
 app.use(notFoundHandler);

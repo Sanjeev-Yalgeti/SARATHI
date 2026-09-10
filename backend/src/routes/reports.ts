@@ -3,8 +3,11 @@ import multer, { type FileFilterCallback } from 'multer';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma } from '../services/db.js';
+import { authenticate } from '../middleware/auth.js';
+import { DRIVER_RADIUS_KM, haversineKm, ownTruck } from '../utils/scope.js';
 
 const router = Router();
+router.use(authenticate);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -32,7 +35,9 @@ const upload = multer({
   fileFilter: imageOnly,
 });
 
-// GET /api/reports?date=2026-08-09 → field reports, newest first.
+// GET /api/reports?date=2026-08-09 → admin: all reports;
+// driver: only reports near their own truck (reports carry no district,
+// so latest-trip word matching is impossible — radius is the only signal).
 router.get('/', async (req: Request, res: Response) => {
   const date = typeof req.query['date'] === 'string' ? req.query['date'] : undefined;
   if (date !== undefined && !DATE_RE.test(date)) {
@@ -43,7 +48,20 @@ router.get('/', async (req: Request, res: Response) => {
     where: date ? { eventDate: date } : undefined,
     orderBy: { createdAt: 'desc' },
   });
-  res.json({ reports });
+  if (req.user?.role !== 'DRIVER') {
+    res.json({ reports });
+    return;
+  }
+  const truck = ownTruck(req);
+  if (!truck) {
+    res.json({ reports: [] });
+    return;
+  }
+  res.json({
+    reports: reports.filter(
+      (r) => haversineKm(truck.lat, truck.lng, r.lat, r.lng) <= DRIVER_RADIUS_KM,
+    ),
+  });
 });
 
 // POST /api/reports (multipart: photo + lat, lng, type, severity, note,

@@ -1,8 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import { getRoute } from '../services/routing.service.js';
+import { authenticate } from '../middleware/auth.js';
 import type { Coordinates } from '../services/simulation.service.js';
 
 const router = Router();
+router.use(authenticate);
 
 function parsePoint(raw: unknown): Coordinates | null {
   if (typeof raw !== 'string') return null;
