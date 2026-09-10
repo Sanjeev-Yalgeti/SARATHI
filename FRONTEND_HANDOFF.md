@@ -67,14 +67,15 @@ trips, bulletin all filter by the JWT). The frontend only hides tabs.
 | POST | `/api/incidents` | **admin** | `{ lat, lng, type, severity, eventDate, road?, district?, note? }` | `201 { incident }` |
 | GET | `/api/routes?from=lat,lng&to=lat,lng` | token | query | `{ primary[], alternate[], alternateLabel, distance_km, duration_min, traffic_level, blocked, source }` |
 | POST | `/api/route/analyze` (alias `/api/routes/analyze`) | token | `{ origin:{lat,lng}, destination:{lat,lng}, eventDate }` | `{ risk{landslide_prob,score,level,reasons}, blocked, recommendedRoad, route, delayMessage }` |
-| GET | `/api/risk?lat=&lng=&date=` | — (public) | query | `{ landslide_prob, score, level, reasons, source, rainfall_mm }` |
-| GET | `/api/weather?lat=&lng=` | — (public) | query | `{ source, rainfall_mm, probability, condition?, wind_kph? }` |
+| GET | `/api/risk?lat=&lng=&date=` | token | query | `{ landslide_prob, score, level, reasons, source, rainfall_mm }` |
+| GET | `/api/weather?lat=&lng=` | token | query | `{ source, rainfall_mm, probability, condition?, wind_kph? }` |
 | GET | `/api/trips` | token | — | `{ trips: [{ id, driverId, origin, destination, cargoType, status }] }` — driver gets own |
 | POST | `/api/trips` | **admin** | `{ driverId, origin, destination, cargoType? }` | `201 { trip }` (404 if driver unknown) |
 | PATCH | `/api/trips/:id` | **admin** | `{ origin?, destination?, cargoType?, status? }` (`assigned \| in_progress \| completed`) | `{ trip }` |
 | DELETE | `/api/trips/:id` | **admin** | — | `{ deleted: true }` |
 | GET | `/api/simulation/status` | token | — | `{ scenarioDate, vehicles[] }` (driver: own truck) |
 | POST | `/api/simulation/date` | **admin** | `{ date: YYYY-MM-DD }` | `{ scenarioDate, vehicles[] }` — unblocks trucks, replays date |
+| POST | `/api/simulation/location` | **admin** | `{ vehicleId, lat, lng, speed? }` — coords inside 21–30N, 89–98E | `{ vehicle }` — mock-GPS ingest, clock resumes from snapped point, never unblocks |
 | GET | `/api/reports?date=` | token | `date` optional | `{ reports: [{ id, lat, lng, type, severity, note, photoUrl, eventDate }] }` |
 | POST | `/api/reports` | token | JSON **or** multipart (`photo` jpg/png ≤5MB) `{ lat, lng, type, severity, note, eventDate }` — coords must be inside 21–30N, 89–98E | `201 { report }` |
 | GET | `/api/bulletin.pdf?date=` | token | `date` optional (default 2026-08-09) | PDF download (driver copy is scoped) |
@@ -127,7 +128,9 @@ Dates: `2026-07-19` onset (no incidents — honest empty) ·
 
 ## 8. Parked (NOT in scope — see `backend/PROJECT.md` §13)
 
-Socket.io realtime (polling ships), Google map tiles, geocode merge
-(`npm run geocode:incidents` staging flow), bulletin figure sourcing,
-dead-route cleanup, `POST /api/simulation/location`, JWT on
-weather/risk, per-driver passwords.
+Google map tiles, geocode merge (`npm run geocode:incidents` staging
+flow), bulletin figure sourcing, per-driver passwords.
+
+Live pushes ship: Socket.io (`vehicle:update`, `alert:risk`,
+`alert:blockage`, JWT handshake, driver-scoped rooms) with 2s REST
+polling kept as fallback.

@@ -10,7 +10,7 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig([
   {
-    ignores: ['build/**', 'node_modules/**', 'coverage/**'],
+    ignores: ['build/**', 'node_modules/**', 'coverage/**', '**/.venv/**', '**/venv/**', 'disaster-ml/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

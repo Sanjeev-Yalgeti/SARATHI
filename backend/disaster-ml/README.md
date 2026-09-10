@@ -81,3 +81,31 @@ result = predict_risk(
 )
 print(result)
 ```
+
+## Simulation sidecar (used by the Node backend)
+
+The Express backend and the 2s simulation loop call the model over HTTP
+instead of shelling out to Python per tick:
+
+```bash
+pip install -r requirements.txt
+uvicorn serve:app --port 8000        # run from backend/disaster-ml/src/
+```
+
+- `GET /health` — model + dataset status.
+- `GET /districts[?date=YYYY-MM-DD]` — districts the model knows.
+- `POST /predict { district, date, overrides? }` — base district-date row
+  from `training_dataset.csv` plus what-if overrides
+  (`rainfall_mm`, `river_danger_level_count`, …). Sparse dates fall back
+  to the district's most recent earlier row and report `base_date`;
+  unknown districts/keys are 422, never fabricated.
+
+Backend wiring (`ML_URL=http://localhost:8000`, see `backend/.env.example`):
+
+- `src/services/ml-client.ts` — sidecar HTTP client.
+- `src/services/ml-district.ts` — truck (lat,lng) → corridor district,
+  ML band → score/level.
+- `src/services/risk.service.ts` — ML-first `predictRisk` with heuristic
+  fallback when the sidecar is down.
+- `src/services/simulation.service.ts` — tick blocks trucks on CRITICAL,
+  slows them on HIGH; `POST /api/simulation/scenario` drives what-if runs.
