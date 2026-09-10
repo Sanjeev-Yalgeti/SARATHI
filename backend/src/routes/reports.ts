@@ -75,6 +75,10 @@ router.post('/', upload.single('photo'), async (req: Request, res: Response) => 
     res.status(400).json({ error: 'lat and lng must be numbers' });
     return;
   }
+  if (latNum < 21 || latNum > 30 || lngNum < 89 || lngNum > 98) {
+    res.status(400).json({ error: 'lat/lng must be inside the North East India operating area (21-30N, 89-98E)' });
+    return;
+  }
   if (typeof type !== 'string' || type === '' || typeof severity !== 'string' || severity === '') {
     res.status(400).json({ error: 'type and severity are required strings' });
     return;

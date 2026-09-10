@@ -9,6 +9,7 @@ import authRouter from './routes/auth.js';
 import bulletinRouter from './routes/bulletin.js';
 import healthRouter from './routes/health.js';
 import incidentsRouter from './routes/incidents.js';
+import intelligenceRouter from './routes/intelligence.js';
 import reportsRouter from './routes/reports.js';
 import routesRouter from './routes/routes.js';
 import tripsRouter from './routes/trips.js';
@@ -35,9 +36,13 @@ app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter); // public — login lives here
 app.use('/api/vehicles', vehiclesRouter);
 app.use('/api/incidents', incidentsRouter);
+app.use('/api', intelligenceRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/routes', routesRouter);
 app.use('/api/trips', tripsRouter);
+// Canonical endpoint documented for the dashboard. Keep `/api/routes/analyze`
+// working as a compatibility alias while clients move to this singular form.
+app.use('/api/route', routesRouter);
 app.use('/api/bulletin.pdf', bulletinRouter);
 
 app.use(notFoundHandler);
