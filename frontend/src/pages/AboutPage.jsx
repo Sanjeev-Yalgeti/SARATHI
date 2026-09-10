@@ -36,8 +36,6 @@ const STEPS = [
   },
 ];
 
-const STATES = ["Arunachal Pradesh", "Assam", "Manipur", "Meghalaya"];
-
 const FOOTER_COLS = [
   {
     title: "Quick Links",
