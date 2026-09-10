@@ -14,7 +14,10 @@ import {
   Calendar,
   ShieldAlert,
   Info,
+  Flame,
 } from "lucide-react";
+import HeatmapLayer from "./HeatmapLayer";
+import { useHeatData } from "../hooks/useHeatData";
 import { isNetworkError } from "../api/auth";
 
 // Severity color tokens
@@ -133,6 +136,8 @@ export default function LiveMap({
   pollMs = 2000,
   showIncidents: initialShowIncidents = true,
   showBanner: initialShowBanner = true,
+  showHeatmap: initialShowHeatmap = true,
+  initialHeatMode = "all", // "incidents" | "all"
   theme = "light",
   height = "520px",
   onDateChange,
@@ -148,7 +153,17 @@ export default function LiveMap({
   const [showIncidents, setShowIncidents] = useState(initialShowIncidents);
   const [showVehicles, setShowVehicles] = useState(true);
   const [showBanner, setShowBanner] = useState(initialShowBanner);
+  const [showHeatmap, setShowHeatmap] = useState(initialShowHeatmap);
+  const [heatMode, setHeatMode] = useState(initialHeatMode);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
+
+  // Risk Heatmap data hook: fetches incidents + coarse risk grid over corridor bbox
+  const heatData = useHeatData({
+    date: selectedDate,
+    token: jwt,
+    apiUrl: base,
+    mode: heatMode,
+  });
 
   const isMountedRef = useRef(true);
 
@@ -389,6 +404,57 @@ export default function LiveMap({
             <span>Risk Banner</span>
           </button>
 
+          {/* Heatmap Layer Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowHeatmap(!showHeatmap)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+              showHeatmap
+                ? "bg-orange-50 dark:bg-orange-950/30 text-orange-600 border-orange-200 dark:border-orange-900 shadow-xs"
+                : "bg-gray-100 dark:bg-slate-800 text-gray-500 border-transparent"
+            }`}
+            title="Toggle risk heatmap overlay"
+          >
+            <Flame
+              size={13}
+              className={showHeatmap ? "text-orange-500 fill-orange-500" : ""}
+            />
+            <span>Heatmap ({heatData.points.length})</span>
+          </button>
+
+          {/* Heatmap Mode Selector (Incidents Only vs Incidents + Risk Grid) */}
+          {showHeatmap && (
+            <div className="flex items-center bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg border border-gray-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setHeatMode("incidents")}
+                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer ${
+                  heatMode === "incidents"
+                    ? "bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-xs"
+                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                }`}
+                title="Heatmap from confirmed incidents only"
+              >
+                Incidents Only
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeatMode("all")}
+                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer flex items-center gap-1 ${
+                  heatMode === "all"
+                    ? "bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-xs"
+                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                }`}
+                title="Heatmap from confirmed incidents + sampled corridor risk grid (35 cells)"
+              >
+                <span>Incidents + Risk Grid</span>
+                {heatData.isGridLoading && (
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping" />
+                )}
+              </button>
+            </div>
+          )}
+
           {/* Live Polling Badge */}
           <div
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
@@ -446,6 +512,23 @@ export default function LiveMap({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url={tileUrl}
           />
+
+          {/* Risk Heatmap Layer (underneath markers) */}
+          {showHeatmap && (
+            <HeatmapLayer
+              points={heatData.points}
+              radius={25}
+              blur={20}
+              minOpacity={0.4}
+              gradient={{
+                0.2: "#16a34a", // LOW (green)
+                0.4: "#eab308", // MEDIUM (yellow)
+                0.7: "#ea580c", // HIGH (orange)
+                1.0: "#dc2626", // RED (red)
+              }}
+              max={1.0}
+            />
+          )}
 
           {/* Vehicle Markers */}
           {displayVehicles.map((v) => {
@@ -557,11 +640,19 @@ export default function LiveMap({
         </MapContainer>
 
         {/* Floating Map Legend Overlay */}
-        <div className="absolute bottom-4 right-4 z-[400] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-3 rounded-xl border border-gray-200 dark:border-slate-800 shadow-md text-xs pointer-events-auto">
-          <div className="font-bold mb-2 flex items-center gap-1 text-gray-800 dark:text-gray-200">
-            <Info size={13} />
-            <span>Map Legend</span>
+        <div className="absolute bottom-4 right-4 z-[400] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-gray-200 dark:border-slate-800 shadow-md text-xs pointer-events-auto max-w-[280px]">
+          <div className="font-bold mb-2 flex items-center justify-between gap-1 text-gray-800 dark:text-gray-200">
+            <div className="flex items-center gap-1">
+              <Info size={13} />
+              <span>Map Legend</span>
+            </div>
+            {showHeatmap && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 font-semibold">
+                Heat Active
+              </span>
+            )}
           </div>
+
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#16a34a]" />
@@ -580,6 +671,60 @@ export default function LiveMap({
               <span>HIGH Risk</span>
             </div>
           </div>
+
+          {/* Heatmap Risk Gradient Chips & Transparency Info Line */}
+          {showHeatmap && (
+            <div className="mt-2.5 pt-2 border-t border-gray-200 dark:border-slate-800">
+              <div className="text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center justify-between">
+                <span>HEATMAP RISK LEVEL</span>
+                <span className="font-mono text-[9px] text-gray-400">0.0 &rarr; 1.0</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1 text-center text-[9px] font-bold">
+                <span className="px-1 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                  LOW
+                </span>
+                <span className="px-1 py-0.5 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300 border border-yellow-300 dark:border-yellow-800">
+                  MED
+                </span>
+                <span className="px-1 py-0.5 rounded bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300 border border-orange-300 dark:border-orange-800">
+                  HIGH
+                </span>
+                <span className="px-1 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300 border border-red-300 dark:border-red-800">
+                  RED
+                </span>
+              </div>
+
+              {/* Transparency / Model Source Line */}
+              <div className="mt-2 pt-1.5 border-t border-dashed border-gray-200 dark:border-slate-800 text-[10px] text-gray-500 dark:text-gray-400 space-y-0.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600 dark:text-gray-300">Model Source:</span>
+                  <span
+                    className={`font-semibold uppercase text-[9px] px-1.5 py-0.2 rounded ${
+                      heatData.metadata.source === "ml"
+                        ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 font-bold"
+                        : "bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-gray-300 font-mono"
+                    }`}
+                  >
+                    {heatData.metadata.source === "ml" ? "Disaster-ML" : "Heuristic"}
+                  </span>
+                </div>
+                {heatData.metadata.baseDate && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600 dark:text-gray-300">Base Date:</span>
+                    <span className="font-mono text-[9px] text-gray-700 dark:text-gray-300">
+                      {heatData.metadata.baseDate}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-[9px] text-gray-400">
+                  <span>Coverage:</span>
+                  <span>
+                    {heatData.points.length} pts ({heatMode === "incidents" ? "Incidents" : "Incidents + Grid"})
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

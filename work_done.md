@@ -129,6 +129,23 @@ The platform separates responsibilities cleanly:
     - Server-side 1.0 km radius validation.
     - Added `PATCH /api/reports/:id` for Admin decision processing.
 
+- [x] **Dynamic Risk Heatmap on Live GIS Map (Implemented):**
+  - **Leaflet Heatmap Wrapper (`frontend/src/components/HeatmapLayer.jsx`)**:
+    - Thin React wrapper around `leaflet.heat` using `useMap()` and `L.heatLayer()`.
+    - Configured with `radius=25`, `blur=20`, `minOpacity=0.4`, and custom four-tier color gradient matching SARATHI risk tokens (`LOW`: green, `MED`: yellow, `HIGH`: orange, `RED`: red).
+    - Guaranteed cleanup on unmount and prop change to eliminate memory leaks and ghost layers.
+  - **Heat Data Hook (`frontend/src/hooks/useHeatData.js`)**:
+    - Given `(date, token)`: fetches real incidents from `GET /api/incidents?date=` and samples `GET /api/risk` across a 35-cell grid over the corridor bounding box (lat 26.1–27.2, lng 91.7–94.7).
+    - Weights: `RED=1.0`, `HIGH=0.7`, `MEDIUM=0.4`, `LOW=0.2`, and risk cells `score / 100`.
+    - Caches results by date in memory for instant switching with zero redundant network requests or poll loops.
+    - Preserves server-side scoping by passing the authenticated user's token directly.
+    - Never fabricates coordinates or intensities; renders honest empty heat for sparse dates (19-Jul, 09-Aug).
+  - **Map Controls & Transparency Legend (`frontend/src/components/LiveMap.jsx`)**:
+    - Integrated `<HeatmapLayer>` underneath vehicle and incident markers to keep pins interactive.
+    - Heatmap On/Off toggle with real-time active points badge.
+    - Mode selector: `[Incidents Only]` vs `[Incidents + Risk Grid]` (with sampling progress indicator).
+    - Enhanced floating Map Legend with 4 risk gradient chips (`LOW`, `MED`, `HIGH`, `RED`), Model Source line (`Disaster-ML` / `Heuristic`), base date, and points coverage count.
+
 ---
 
 ## 3. What Is To Be Done (Action Items)
