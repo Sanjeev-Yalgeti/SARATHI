@@ -1,6 +1,6 @@
 import { Clock, MapPin, CloudRain, FileText, Database, Brain, Navigation2, Bell, LayoutDashboard, ArrowRight, ChevronDown } from "lucide-react";
 
-export default function HomePage({ c }) {
+export default function HomePage({ c, onGetStarted, setActive }) {
     /* ── Hero feature list ── */
     const heroItems = [
         { icon: Clock, label: "Real-time monitoring" },
@@ -44,7 +44,7 @@ export default function HomePage({ c }) {
                 className="relative overflow-hidden"
                 style={{
                     width: "100%",
-                    height: "calc(100vh - 4.5rem)",
+                    height: "calc(100vh )",
                     backgroundImage: `linear-gradient(105deg, ${c.pageBg} 0%, ${c.pageBg} 30%, transparent 65%), url('/bg.jpeg')`,
                     backgroundSize: "cover",
                     backgroundPosition: "center",
@@ -65,10 +65,29 @@ export default function HomePage({ c }) {
                         ))}
                     </div>
                 </div>
-                {/* Scroll hint */}
-                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 animate-bounce">
-                    <span className="text-sm font-medium tracking-widest uppercase" style={{ color: c.textMuted }}>Scroll</span>
-                    <ChevronDown size={20} style={{ color: c.textMuted }} />
+
+                {/* Get Started Button & Scroll hint */}
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4 z-20">
+                    <button
+                        onClick={() => {
+                            if (onGetStarted) onGetStarted();
+                            else if (setActive) setActive("Login");
+                        }}
+                        className="px-8 py-3.5 rounded-full font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2.5 cursor-pointer"
+                        style={{
+                            background: "#ff6200",
+                            color: "#ffffff",
+                            boxShadow: `0 8px 24px ${c.green}50`
+                        }}
+                    >
+                        <span>Get Started</span>
+                        <ArrowRight size={20} />
+                    </button>
+
+                    <div className="flex flex-col items-center gap-1 animate-bounce">
+                        <span className="text-xs font-semibold tracking-widest uppercase" style={{ color: c.textMuted }}>Scroll</span>
+                        <ChevronDown size={18} style={{ color: c.textMuted }} />
+                    </div>
                 </div>
             </div>
 

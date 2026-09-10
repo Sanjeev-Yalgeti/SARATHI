@@ -4,3 +4,10 @@
 body {
   font-family: 'Inter', sans-serif;
 }
+
+/* Smooth Light/Dark Theme Transition */
+*, ::before, ::after {
+  transition-property: background-color, color, border-color, fill, stroke, box-shadow;
+  transition-duration: 350ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
