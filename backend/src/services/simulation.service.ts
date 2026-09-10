@@ -3,7 +3,8 @@ import { prisma } from './db.js';
 import { trucks, type Truck } from './trucks.js';
 
 // One GPS point: named fields instead of an anonymous [lng, lat] pair.
-type Coordinates = {
+// Exported for the routing stub (Step 6) until Aryan's service lands.
+export type Coordinates = {
   //made the type coordinates for better readability
   lng: number;
   lat: number;
@@ -42,7 +43,7 @@ let activeDate = process.env['SCENARIO_DATE'] ?? '2026-07-28';
 let cachedDate: string | null = null;
 let cachedBlocks: Array<{ id: string; lat: number; lng: number }> = [];
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
@@ -134,7 +135,7 @@ function resample(coords: Coordinates[], n: number): Coordinates[] {
   return out;
 }
 
-async function fetchRoadLine(waypoints: Coordinates[]): Promise<Coordinates[]> {
+export async function fetchRoadLine(waypoints: Coordinates[]): Promise<Coordinates[]> {
   const base = process.env['OSRM_BASE_URL'] ?? 'https://router.project-osrm.org';
   const coords = waypoints.map(({ lng, lat }) => `${lng},${lat}`).join(';');
   const res = await axios.get(
