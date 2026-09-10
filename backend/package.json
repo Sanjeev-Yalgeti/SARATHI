@@ -18,6 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:seed": "tsx prisma/seed.ts",
+    "test:risk": "tsx --test src/services/risk.level.test.ts",
+    "test:sim": "tsx --test src/services/ml-district.test.ts src/services/simulation.test.ts",
     "geocode:incidents": "tsx scripts/geocode-incidents.ts",
     "postinstall": "prisma generate"
   },

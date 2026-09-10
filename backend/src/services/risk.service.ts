@@ -1,39 +1,28 @@
-import axios from 'axios';
 import { prisma } from './db.js';
+import { mlBandToScore } from './ml-district.js';
+import type { MlBand } from './ml-district.js';
+import { askMl } from './ml-client.js';
+import { clamp, levelFor, type RiskLevel } from './risk.level.js';
 import { haversineKm } from './simulation.service.js';
 import { getWeather } from './weather.service.js';
+
+export { clamp, levelFor, type RiskLevel };
 
 export type RiskResult = {
   landslide_prob: number;
   score: number;
-  level: 'LOW' | 'MEDIUM' | 'HIGH' | 'RED';
+  level: RiskLevel;
   reasons: string[];
   source: 'ml' | 'heuristic';
   rainfall_mm: number;
+  // Present only when the disaster-ML sidecar answered.
+  district?: string;
+  mlBand?: MlBand;
+  baseDate?: string;
+  mlConfidence?: number;
 };
 
-type RiskInput = { lat: number; lng: number; eventDate: string; slope_gradient?: number; forestation_level?: number; road_cut?: number; flood_zone?: number };
-
-function clamp(value: number): number { return Math.max(0, Math.min(1, value)); }
-function levelFor(score: number): RiskResult['level'] {
-  if (score >= 75) return 'RED';
-  if (score >= 55) return 'HIGH';
-  if (score >= 30) return 'MEDIUM';
-  return 'LOW';
-}
-
-async function askMl(input: RiskInput, rainfall: number): Promise<{ probability: number; score?: number } | null> {
-  const base = process.env['ML_URL'] ?? 'http://localhost:8000';
-  try {
-    const { data } = await axios.post(`${base.replace(/\/$/, '')}/predict`, {
-      ...input, rainfall_24h: rainfall, rainfall_3d: rainfall * 2.4,
-      slope_gradient: input.slope_gradient ?? 18, forestation_level: input.forestation_level ?? 0.55,
-      elevation: 160, lithology: 'alluvial', dist_to_river: 2, road_cut: input.road_cut ?? 1, susceptibility: 'medium',
-    }, { timeout: 4500 });
-    const probability = Number(data?.landslide_prob ?? data?.probability ?? data?.confidence);
-    return Number.isFinite(probability) ? { probability: clamp(probability), score: Number(data?.score) || undefined } : null;
-  } catch { return null; }
-}
+type RiskInput = { lat: number; lng: number; eventDate: string; slope_gradient?: number; forestation_level?: number; road_cut?: number; flood_zone?: number; rainfall_mm?: number; river_danger_level_count?: number };
 
 /** ML-first landslide assessment; a transparent local model is the offline fallback. */
 export async function predictRisk(input: RiskInput): Promise<RiskResult> {
@@ -47,10 +36,14 @@ export async function predictRisk(input: RiskInput): Promise<RiskResult> {
   let source: RiskResult['source'];
 
   if (ml) {
-    probability = ml.probability;
-    score = Math.round(ml.score ?? probability * 100);
+    const mapped = mlBandToScore(ml.band);
+    score = mapped.score;
+    probability = clamp(score / 100);
     source = 'ml';
-    reasons.push('Dhruv ML assessment based on terrain, vegetation and rainfall.');
+    reasons.push(
+      `Disaster-ML assessment for ${ml.district} on ${input.eventDate}: ${ml.band} band ` +
+      `(${(ml.confidence * 100).toFixed(1)}% confidence).`
+    );
   } else {
     const rainFactor = clamp(weather.rainfall_mm / 100);
     const roadFactor = input.road_cut ?? 0.7;
@@ -67,7 +60,10 @@ export async function predictRisk(input: RiskInput): Promise<RiskResult> {
     reasons.push(`${closeIncidents.length} active incident(s) within 35 km on this scenario date.`);
   }
   if (input.eventDate === '2026-07-28') reasons.push('Peak-flood scenario date: elevated landslide susceptibility.');
-  const result: RiskResult = { landslide_prob: Number(probability.toFixed(2)), score, level: levelFor(score), reasons, source, rainfall_mm: weather.rainfall_mm };
+  const result: RiskResult = {
+    landslide_prob: Number(probability.toFixed(2)), score, level: levelFor(score), reasons, source, rainfall_mm: weather.rainfall_mm,
+    ...(ml ? { district: ml.district, mlBand: ml.band, baseDate: ml.baseDate, mlConfidence: ml.confidence } : {}),
+  };
   await prisma.riskCache.upsert({
     where: { lat_lng_eventDate: { lat: input.lat, lng: input.lng, eventDate: input.eventDate } },
     create: { lat: input.lat, lng: input.lng, eventDate: input.eventDate, score: result.score, level: result.level, rainfall: result.rainfall_mm, probability: result.landslide_prob, source: result.source, payload: JSON.stringify(result) },

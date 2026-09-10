@@ -67,7 +67,7 @@ async function googleRoutes(from: Coordinates, to: Coordinates): Promise<RouteRe
   if (!key || key.includes('your_')) throw new Error('Google Routes key is not configured');
   const { data } = await axios.post<{ routes?: GoogleRoute[] }>('https://routes.googleapis.com/directions/v2:computeRoutes', {
     origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } }, destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
-    travelMode: 'DRIVE', routingPreference: 'TRAFFIC_AWARE', departureTime: new Date().toISOString(), computeAlternativeRoutes: true,
+    travelMode: 'DRIVE', routingPreference: 'TRAFFIC_AWARE', departureTime: new Date(Date.now() + 60_000).toISOString(), computeAlternativeRoutes: true,
   }, { headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'routes.duration,routes.staticDuration,routes.distanceMeters,routes.polyline.encodedPolyline' }, timeout: 8000 });
   const routes = data.routes ?? [], first = routes[0];
   if (!first?.polyline?.encodedPolyline) throw new Error('Google Routes returned no route');
