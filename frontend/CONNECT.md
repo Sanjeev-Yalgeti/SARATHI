@@ -2,7 +2,8 @@
 
 > For the frontend owner. The backend is **done and frozen** — do everything
 > below inside `frontend/` only. Backend contract source of truth:
-> `../FRONTEND_HANDOFF.md`. Backend env setup: `../backend/env.md`.
+> `../FRONTEND_HANDOFF.md`. Backend env template: `../backend/.env.example`
+> (each machine copies it to `.env` with its own secrets — never share `.env`).
 > What judges see: **Landing → Get Started → Login (Admin or Truck Driver)
 > → role dashboard → Logout.**
 
