@@ -1,0 +1,98 @@
+[
+  {
+    "key": "JUL20-KAMARKUCHI",
+    "label": "Kamarkuchi Revenue Village landslide site",
+    "district": "Kamrup",
+    "eventDate": "2026-07-20",
+    "type": "landslide",
+    "sourcePdf": "Daily_Landslide_Report_2026-07-20.pdf",
+    "testCase": "TC-JUL20-002",
+    "query": "Kamarkuchi, Assam, India",
+    "expectPdfGps": false,
+    "note": "Kutcha house fully damaged after heavy rain. Village-level query; approve only if hit is plausible."
+  },
+  {
+    "key": "JUL21-CHARAIDEO",
+    "label": "Charaideo overtopped roads area",
+    "district": "Charaideo",
+    "eventDate": "2026-07-21",
+    "type": "overtop",
+    "sourcePdf": "Daily_Flood_Report_2026-07-21.pdf",
+    "testCase": "TC-JUL21-001",
+    "query": "Charaideo, Assam, India",
+    "expectPdfGps": false,
+    "note": "Multiple roads overtopped; PDF names no single road. Area-level fallback only — skip if you want road-level precision."
+  },
+  {
+    "key": "JUL21-JHANJI-BUND",
+    "label": "Jhanji Bund right-bank breach",
+    "district": "Sivasagar",
+    "eventDate": "2026-07-21",
+    "type": "breach",
+    "sourcePdf": "Daily_Flood_Report_2026-07-21.pdf",
+    "testCase": "TC-JUL21-002",
+    "query": "Jhanji Bund, Sivasagar, Assam, India",
+    "expectPdfGps": true,
+    "note": "PDF reportedly contains GPS coordinates — prefer the PDF's own numbers over any geocoded hit. Fill pdfGps manually on approval."
+  },
+  {
+    "key": "JUL27-THUKUBILL-SATRA",
+    "label": "Thukubill Satra Road (~3.5 km overtopped)",
+    "district": "Sivasagar",
+    "eventDate": "2026-07-27",
+    "type": "overtop",
+    "sourcePdf": "Daily_Flood_Report_2026-07-27.pdf",
+    "testCase": "TC-PEAK-001",
+    "query": "Thukubill Satra Road, Sivasagar, Assam, India",
+    "expectPdfGps": false,
+    "note": "Flood water overtopping approx 3.5 km."
+  },
+  {
+    "key": "JUL27-DHOLAI-LOWERBOND",
+    "label": "Dholai Bazar - Lowerbond Road side berm (landslide damage)",
+    "district": "Cachar",
+    "eventDate": "2026-07-27",
+    "type": "landslide",
+    "sourcePdf": "Daily_Landslide_Report_2026-07-27.pdf",
+    "testCase": "TC-PEAK-002",
+    "query": "Dholai Bazar Lowerbond Road, Cachar, Assam, India",
+    "expectPdfGps": false,
+    "note": "Side berm damaged due to landslide."
+  },
+  {
+    "key": "JUL28-AMGURI",
+    "label": "Amguri overtopped roads area",
+    "district": "Sivasagar",
+    "eventDate": "2026-07-28",
+    "type": "overtop",
+    "sourcePdf": "Daily_Flood_Report_2026-07-28.pdf",
+    "testCase": "TC-PEAK-004",
+    "query": "Amguri, Sivasagar, Assam, India",
+    "expectPdfGps": false,
+    "note": "Numerous overtopped roads in Sivasagar/Amguri context; area-level fallback only."
+  },
+  {
+    "key": "AUG09-GITANAGAR",
+    "label": "Gitanagar, Guwahati landslide sites (two locations)",
+    "district": "Kamrup Metropolitan",
+    "eventDate": "2026-08-09",
+    "type": "landslide",
+    "sourcePdf": "Daily_Landslide_Report_2026-08-09.pdf",
+    "testCase": "TC-AUG09-003",
+    "query": "Gitanagar, Guwahati, Assam, India",
+    "expectPdfGps": false,
+    "note": "Two distinct landslide locations; one centroid hit covers both until you split them manually."
+  },
+  {
+    "key": "AUG09-DIMA-HASAO",
+    "label": "Dima Hasao severe house-damage landslide site",
+    "district": "Dima Hasao",
+    "eventDate": "2026-08-09",
+    "type": "landslide",
+    "sourcePdf": "Daily_Landslide_Report_2026-08-09.pdf",
+    "testCase": "TC-AUG09-004",
+    "query": "Dima Hasao, Assam, India",
+    "expectPdfGps": false,
+    "note": "District-level fallback only; narrow to village/road when you have the PDF detail."
+  }
+]
