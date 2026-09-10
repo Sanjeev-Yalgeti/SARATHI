@@ -1,5 +1,8 @@
 import axios from 'axios';
+import { emitBlockageAlert, emitRiskAlert, emitVehicleUpdate } from '../sockets/index.js';
 import { prisma } from './db.js';
+import { askMl, type MlAssessment, type ScenarioOverrides } from './ml-client.js';
+import { nearestDistrict } from './ml-district.js';
 import { trucks, type Truck } from './trucks.js';
 
 // One GPS point: named fields instead of an anonymous [lng, lat] pair.
@@ -34,6 +37,7 @@ const ROUTES: Record<string, Coordinates[]> = {
 const TICK_MS = 2000;
 const POINTS_PER_TRIP = 150; //Full trip = approx 5min at 1 point/2s
 const SPEED_KMH = 40;
+const SLOW_KMH = 20; // ML HIGH band: cautious speed instead of a full stop
 
 // Step 5 stop rule (temporary brains until Aryan returns): on the active
 // scenario date, a truck entering BLOCK_RADIUS_KM of a RED incident stops.
@@ -67,6 +71,61 @@ async function getBlocks(): Promise<Array<{ id: string; lat: number; lng: number
   return cachedBlocks;
 }
 
+// What-if knobs for the ML engine (set via POST /api/simulation/scenario).
+// They become sidecar overrides; empty = pure recorded district-date row.
+let scenarioOverrides: ScenarioOverrides = {};
+// ML answers cached per district+date+knobs so the 2s tick never hammers :8000.
+const mlCache = new Map<string, (MlAssessment & { source: 'ml' }) | null>();
+// Latest ML state per truck, surfaced in GET /api/simulation/status.
+const mlState = new Map<string, { district: string; band: MlAssessment['band'] | null; confidence: number | null; source: 'ml' | 'heuristic' }>();
+
+export function getScenarioOverrides(): ScenarioOverrides {
+  return { ...scenarioOverrides };
+}
+
+/** Full scenario switch: date + what-if knobs. Clears ML cache, unblocks trucks. */
+export function setScenario(date: string, overrides: ScenarioOverrides = {}): void {
+  scenarioOverrides = { ...overrides };
+  mlCache.clear();
+  mlState.clear();
+  setScenarioDate(date);
+}
+
+function mlCacheKey(district: string): string {
+  return `${district}|${activeDate}|${scenarioOverrides.rainfall_mm ?? ''}|${scenarioOverrides.river_danger_level_count ?? ''}`;
+}
+
+/** Motion decision from an ML band: CRITICAL stops, HIGH crawls, else go. */
+export function mlMotionFor(band: string | null): 'block' | 'slow' | 'go' {
+  if (band === 'CRITICAL') return 'block';
+  if (band === 'HIGH') return 'slow';
+  return 'go';
+}
+
+/** ML assessment for any position (also used by the tick loop). Exported for tests/replay. */
+export async function assessTruckMl(vehicleId: string, lat: number, lng: number) {
+  const district = nearestDistrict(lat, lng);
+  const key = mlCacheKey(district);
+  let cached = mlCache.has(key) ? mlCache.get(key) : undefined;
+  if (cached === undefined) {
+    const assessment = await askMl(
+      { lat, lng, eventDate: activeDate, ...scenarioOverrides },
+      scenarioOverrides.rainfall_mm ?? 0
+    );
+    cached = assessment ? { ...assessment, source: 'ml' as const } : null;
+    mlCache.set(key, cached);
+  }
+  const state = cached
+    ? { district, band: cached.band, confidence: cached.confidence, source: cached.source }
+    : { district, band: null, confidence: null, source: 'heuristic' as const };
+  mlState.set(vehicleId, state);
+  return state;
+}
+
+export function getMlState(): Record<string, { district: string; band: string | null; confidence: number | null; source: string }> {
+  return Object.fromEntries(mlState);
+}
+
 // Demo date switch (19-07 onset / 28-07 peak / 09-08 relief). Unblocks trucks
 // so the new date replays from current positions.
 export function getScenarioDate(): string {
@@ -76,6 +135,7 @@ export function getScenarioDate(): string {
 export function setScenarioDate(date: string): void {
   activeDate = date;
   cachedDate = null;
+  mlCache.clear(); // assessments are per date
   for (const truck of trucks.values()) {
     if (truck.status === 'blocked') {
       truck.status = 'moving';
@@ -203,9 +263,55 @@ async function tick(): Promise<void> {
       truck.status = 'blocked';
       truck.speed = 0;
       console.warn(`[sim] ${vehicleId} BLOCKED near ${hit.id} on ${activeDate}`);
+      emitVehicleUpdate(truck);
+      emitBlockageAlert({
+        vehicleId,
+        lat,
+        lng,
+        reason: `RED incident ${hit.id} within ${BLOCK_RADIUS_KM} km`,
+        incidentId: hit.id,
+        scenarioDate: activeDate,
+      });
+      continue;
+    }
+    // ML engine assessment for the truck's current district (cached per
+    // district+date+knobs; silent heuristic degradation when sidecar is down).
+    const prevBand = mlState.get(vehicleId)?.band ?? null;
+    const ml = await assessTruckMl(vehicleId, lat, lng);
+    if (mlMotionFor(ml.band) === 'block') {
+      truck.lat = lat;
+      truck.lng = lng;
+      truck.status = 'blocked';
+      truck.speed = 0;
+      console.warn(`[sim] ${vehicleId} ML-BLOCKED in ${ml.district} (${ml.band}) on ${activeDate}`);
+      emitVehicleUpdate(truck);
+      emitBlockageAlert({
+        vehicleId,
+        lat,
+        lng,
+        reason: `ML ${ml.band} band in ${ml.district}`,
+        district: ml.district,
+        band: ml.band,
+        scenarioDate: activeDate,
+      });
       continue;
     }
     updateTruck(truck, lat, lng);
+    if (mlMotionFor(ml.band) === 'slow') {
+      truck.speed = SLOW_KMH; // cautious crawl through HIGH-band district
+    }
+    emitVehicleUpdate(truck);
+    // Risk alerts only on band transitions (not every 2s tick) to avoid spam.
+    if ((ml.band === 'HIGH' || ml.band === 'CRITICAL') && ml.band !== prevBand) {
+      emitRiskAlert({
+        vehicleId,
+        district: ml.district,
+        band: ml.band,
+        confidence: ml.confidence,
+        source: ml.source,
+        scenarioDate: activeDate,
+      });
+    }
   }
 }
 
@@ -216,6 +322,44 @@ function updateTruck(truck: Truck, lat: number, lng: number): void {
     truck.status = 'moving';
     truck.speed = SPEED_KMH;
   }
+}
+
+// Mock-GPS ingest for POST /api/simulation/location (PROJECT.md §9).
+// Moves the truck on the live map and snaps the internal clock's progress
+// index to the nearest line point so the next tick continues smoothly.
+// Never unblocks: a blocked truck keeps status blocked (RED/ML rules own
+// unblocking via date change). Returns null for unknown vehicleIds.
+export function ingestMockGps(
+  vehicleId: string,
+  lat: number,
+  lng: number,
+  speed?: number,
+): Truck | null {
+  const truck = trucks.get(vehicleId);
+  if (!truck) return null;
+  truck.lat = lat;
+  truck.lng = lng;
+  if (truck.status !== 'blocked') {
+    truck.status = 'moving';
+    truck.speed = speed ?? SPEED_KMH;
+  } else {
+    truck.speed = 0;
+  }
+  const p = progress.get(vehicleId);
+  if (p && p.line.length > 0) {
+    let best = 0;
+    let bestKm = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < p.line.length; i++) {
+      const pt = p.line[i] as Coordinates;
+      const km = haversineKm(lat, lng, pt.lat, pt.lng);
+      if (km < bestKm) {
+        bestKm = km;
+        best = i;
+      }
+    }
+    p.idx = best;
+  }
+  return truck;
 }
 
 export function stopSimulation(): void {
