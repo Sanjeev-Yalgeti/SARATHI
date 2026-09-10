@@ -8,6 +8,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import bulletinRouter from './routes/bulletin.js';
 import healthRouter from './routes/health.js';
 import incidentsRouter from './routes/incidents.js';
+import intelligenceRouter from './routes/intelligence.js';
 import reportsRouter from './routes/reports.js';
 import routesRouter from './routes/routes.js';
 import vehiclesRouter from './routes/vehicles.js';
@@ -32,8 +33,12 @@ app.use('/uploads', express.static(join(dirname(fileURLToPath(import.meta.url)),
 app.use('/api/health', healthRouter);
 app.use('/api/vehicles', vehiclesRouter);
 app.use('/api/incidents', incidentsRouter);
+app.use('/api', intelligenceRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/routes', routesRouter);
+// Canonical endpoint documented for the dashboard. Keep `/api/routes/analyze`
+// working as a compatibility alias while clients move to this singular form.
+app.use('/api/route', routesRouter);
 app.use('/api/bulletin.pdf', bulletinRouter);
 
 app.use(notFoundHandler);
