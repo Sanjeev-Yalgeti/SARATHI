@@ -547,7 +547,8 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
               {/* Simulated Trucks */}
               {displayedVehicles.map((truck) => {
                 const isBlocked = truck.status === "blocked";
-                const markerColor = isBlocked ? "#dc2626" : "#16a34a";
+                const isArrived = truck.status === "idle";
+                const markerColor = isBlocked ? "#dc2626" : isArrived ? "#0a8754" : "#16a34a";
 
                 return (
                   <CircleMarker
@@ -569,14 +570,25 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
                             className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                               isBlocked
                                 ? "bg-red-100 text-red-700"
-                                : "bg-emerald-100 text-emerald-700"
+                                : isArrived
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-emerald-100 text-emerald-700"
                             }`}
                           >
-                            {isBlocked ? "BLOCKED (0 km/h)" : `MOVING (${truck.speed} km/h)`}
+                            {isBlocked
+                              ? "BLOCKED (0 km/h)"
+                              : isArrived
+                                ? "ARRIVED"
+                                : `MOVING (${truck.speed} km/h)`}
                           </span>
                         </div>
                         <div className="text-gray-600 text-[11px]">
                           <strong>Route:</strong> {truck.origin} &rarr; {truck.destination}
+                          {truck.diverted && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold text-white bg-sky-600">
+                              detour
+                            </span>
+                          )}
                         </div>
                         <div className="text-gray-600 text-[11px]">
                           <strong>Cargo:</strong> {truck.cargoType || "Relief materials"}
@@ -588,7 +600,8 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
                     </Popup>
                     <Tooltip direction="top" offset={[0, -8]} permanent>
                       <span className="font-mono text-[10px] font-bold px-1 py-0.5 rounded bg-white/90 text-gray-900 shadow">
-                        {truck.vehicleId} ({truck.speed} km/h)
+                        {truck.vehicleId} ({isArrived ? "arrived" : `${truck.speed} km/h`})
+                        {truck.diverted ? " • detour" : ""}
                       </span>
                     </Tooltip>
                   </CircleMarker>
@@ -819,6 +832,7 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
             <tbody className="divide-y" style={{ borderColor: c.cardBorder }}>
               {displayedVehicles.map((v) => {
                 const isBlocked = v.status === "blocked";
+                const isArrived = v.status === "idle";
                 const riskInfo = mlRisk[v.vehicleId] || {};
 
                 return (
@@ -839,10 +853,10 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
-                            isBlocked ? "bg-red-500" : "bg-emerald-500 animate-ping"
+                            isBlocked ? "bg-red-500" : isArrived ? "bg-emerald-600" : "bg-emerald-500 animate-ping"
                           }`}
                         />
-                        {isBlocked ? "BLOCKED" : "MOVING"}
+                        {isBlocked ? "BLOCKED" : isArrived ? "ARRIVED" : v.diverted ? "ON DETOUR" : "MOVING"}
                       </span>
                     </td>
                     <td className="p-3.5 font-mono font-semibold" style={{ color: c.text }}>
