@@ -1,41 +1,41 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Truck, RefreshCw } from "lucide-react";
 import apiClient from "../api/client";
-import { isNetworkError } from "../api/auth";
+// import { isNetworkError } from "../api/auth";
 import TripCard from "../components/TripCard";
 import TripDetailsModal from "../components/TripDetailsModal";
 import AssignTripModal from "../components/AssignTripModal";
 
-// Seed fallback trips when backend is offline for dev testing
-const FALLBACK_SEEDED_TRIPS = [
-  {
-    id: "TRP-7845-AS01",
-    driverId: "AS-01-FOOD-04",
-    origin: "Guwahati, Assam",
-    destination: "Golaghat relief camp, Assam",
-    cargoType: "rice + emergency medicines",
-    status: "in_progress",
-    createdAt: "2026-07-28T04:30:00.000Z",
-  },
-  {
-    id: "TRP-7846-AS02",
-    driverId: "AS-02-MED-11",
-    origin: "Guwahati, Assam",
-    destination: "Sivasagar Civil Hospital, Assam",
-    cargoType: "vital medicines + surgical packs",
-    status: "in_progress",
-    createdAt: "2026-07-28T05:15:00.000Z",
-  },
-  {
-    id: "TRP-7847-AS03",
-    driverId: "AS-03-FUEL-07",
-    origin: "Guwahati, Assam",
-    destination: "Sivasagar via Nagaon, Assam",
-    cargoType: "high-octane diesel for generators",
-    status: "assigned",
-    createdAt: "2026-07-28T06:00:00.000Z",
-  },
-];
+// Seed fallback trips when backend is offline for dev testing (commented out per user request)
+// const FALLBACK_SEEDED_TRIPS = [
+//   {
+//     id: "TRP-7845-AS01",
+//     driverId: "AS-01-FOOD-04",
+//     origin: "Guwahati, Assam",
+//     destination: "Golaghat relief camp, Assam",
+//     cargoType: "rice + emergency medicines",
+//     status: "in_progress",
+//     createdAt: "2026-07-28T04:30:00.000Z",
+//   },
+//   {
+//     id: "TRP-7846-AS02",
+//     driverId: "AS-02-MED-11",
+//     origin: "Guwahati, Assam",
+//     destination: "Sivasagar Civil Hospital, Assam",
+//     cargoType: "vital medicines + surgical packs",
+//     status: "in_progress",
+//     createdAt: "2026-07-28T05:15:00.000Z",
+//   },
+//   {
+//     id: "TRP-7847-AS03",
+//     driverId: "AS-03-FUEL-07",
+//     origin: "Guwahati, Assam",
+//     destination: "Sivasagar via Nagaon, Assam",
+//     cargoType: "high-octane diesel for generators",
+//     status: "assigned",
+//     createdAt: "2026-07-28T06:00:00.000Z",
+//   },
+// ];
 
 export default function TripsPage({ c, userRole = "ADMIN", currentUser = null }) {
   const [tab, setTab] = useState("all");
@@ -69,9 +69,7 @@ export default function TripsPage({ c, userRole = "ADMIN", currentUser = null })
           setTrips(res.data.trips);
         }
       } catch (err) {
-        if (!cancelled && isNetworkError(err)) {
-          setTrips((prev) => (prev.length > 0 ? prev : FALLBACK_SEEDED_TRIPS));
-        }
+        console.error("[TripsPage] Failed to load trips:", err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -90,11 +88,6 @@ export default function TripsPage({ c, userRole = "ADMIN", currentUser = null })
       } catch {
         if (!cancelled) {
           setIsLiveTelemetry(false);
-          setVehicles([
-            { vehicleId: "AS-01-FOOD-04", status: "blocked", speed: 0, lat: 26.54, lng: 93.35 },
-            { vehicleId: "AS-02-MED-11", status: "moving", speed: 48, lat: 26.35, lng: 92.68 },
-            { vehicleId: "AS-03-FUEL-07", status: "moving", speed: 52, lat: 26.22, lng: 91.95 },
-          ]);
         }
       }
     };
@@ -108,101 +101,74 @@ export default function TripsPage({ c, userRole = "ADMIN", currentUser = null })
     };
   }, []);
 
-  // Map vehicle telemetry by driverId
+  // Base scoped trips for counts
+  const baseScopedTrips = useMemo(() => {
+    if (userRole === "DRIVER" && currentUser?.id) {
+      return trips.filter(
+        (t) =>
+          t.driverId === currentUser.id ||
+          t.driver?.id === currentUser.id ||
+          t.driver === currentUser.id
+      );
+    }
+    return trips;
+  }, [trips, userRole, currentUser]);
+
+  // Filter trips by active status tab
+  const displayedTrips = useMemo(() => {
+    const base = baseScopedTrips;
+
+    if (tab === "ongoing") {
+      return base.filter((t) => t.status === "in_progress");
+    }
+    if (tab === "upcoming") {
+      return base.filter((t) => t.status === "assigned");
+    }
+    if (tab === "completed") {
+      return base.filter((t) => t.status === "completed");
+    }
+    return base;
+  }, [baseScopedTrips, tab]);
+
+  // Vehicle lookup map for quick telemetry correlation
   const vehicleMap = useMemo(() => {
     const map = new Map();
-    vehicles.forEach((v) => map.set(v.vehicleId, v));
+    for (const v of vehicles) {
+      map.set(v.vehicleId, v);
+    }
     return map;
   }, [vehicles]);
 
-  // Scoping: Drivers only see trips assigned to their vehicleId
-  const scopedTrips = useMemo(() => {
-    if (isDriver && driverVehicleId) {
-      return trips.filter((t) => t.driverId === driverVehicleId);
-    }
-    return trips;
-  }, [trips, isDriver, driverVehicleId]);
-
-  // Filtered by tab status
-  const displayedTrips = useMemo(() => {
-    if (tab === "ongoing") {
-      return scopedTrips.filter((t) => t.status === "in_progress");
-    }
-    if (tab === "upcoming") {
-      return scopedTrips.filter((t) => t.status === "assigned");
-    }
-    if (tab === "completed") {
-      return scopedTrips.filter((t) => t.status === "completed");
-    }
-    return scopedTrips;
-  }, [scopedTrips, tab]);
-
   // Handle Admin Trip Creation (POST /api/trips)
   const handleCreateTrip = async (newTripData) => {
-    try {
-      const res = await apiClient.post("/api/trips", newTripData);
-      if (res.data?.trip) {
-        setTrips((prev) => [res.data.trip, ...prev]);
-      }
-    } catch (err) {
-      if (isNetworkError(err)) {
-        // Offline dev fallback creation
-        const localTrip = {
-          id: `TRP-${Date.now().toString().slice(-4)}-${newTripData.driverId.slice(0, 4)}`,
-          ...newTripData,
-          status: "assigned",
-          createdAt: new Date().toISOString(),
-        };
-        setTrips((prev) => [localTrip, ...prev]);
-        return;
-      }
-      throw err;
+    const res = await apiClient.post("/api/trips", newTripData);
+    if (res.data?.trip) {
+      setTrips((prev) => [res.data.trip, ...prev]);
     }
   };
 
   // Handle Admin Status Update (PATCH /api/trips/:id)
   const handleUpdateStatus = async (tripId, newStatus) => {
-    try {
-      await apiClient.patch(`/api/trips/${tripId}`, { status: newStatus });
-      setTrips((prev) =>
-        prev.map((t) => (t.id === tripId ? { ...t, status: newStatus } : t))
-      );
-      if (selectedTrip?.id === tripId) {
-        setSelectedTrip((prev) => (prev ? { ...prev, status: newStatus } : null));
-      }
-    } catch (err) {
-      if (isNetworkError(err)) {
-        setTrips((prev) =>
-          prev.map((t) => (t.id === tripId ? { ...t, status: newStatus } : t))
-        );
-        if (selectedTrip?.id === tripId) {
-          setSelectedTrip((prev) => (prev ? { ...prev, status: newStatus } : null));
-        }
-        return;
-      }
-      throw err;
+    await apiClient.patch(`/api/trips/${tripId}`, { status: newStatus });
+    setTrips((prev) =>
+      prev.map((t) => (t.id === tripId ? { ...t, status: newStatus } : t))
+    );
+    if (selectedTrip?.id === tripId) {
+      setSelectedTrip((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
   };
 
   // Handle Admin Trip Deletion (DELETE /api/trips/:id)
   const handleDeleteTrip = async (tripId) => {
-    try {
-      await apiClient.delete(`/api/trips/${tripId}`);
-      setTrips((prev) => prev.filter((t) => t.id !== tripId));
-    } catch (err) {
-      if (isNetworkError(err)) {
-        setTrips((prev) => prev.filter((t) => t.id !== tripId));
-        return;
-      }
-      throw err;
-    }
+    await apiClient.delete(`/api/trips/${tripId}`);
+    setTrips((prev) => prev.filter((t) => t.id !== tripId));
   };
 
   // Counts for tabs
-  const countAll = scopedTrips.length;
-  const countOngoing = scopedTrips.filter((t) => t.status === "in_progress").length;
-  const countUpcoming = scopedTrips.filter((t) => t.status === "assigned").length;
-  const countCompleted = scopedTrips.filter((t) => t.status === "completed").length;
+  const countAll = baseScopedTrips.length;
+  const countOngoing = baseScopedTrips.filter((t) => t.status === "in_progress").length;
+  const countUpcoming = baseScopedTrips.filter((t) => t.status === "assigned").length;
+  const countCompleted = baseScopedTrips.filter((t) => t.status === "completed").length;
 
   return (
     <div className="p-4 sm:p-6 md:p-10 max-w-7xl mx-auto space-y-6 font-sans">
@@ -223,7 +189,7 @@ export default function TripsPage({ c, userRole = "ADMIN", currentUser = null })
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400">
             <RefreshCw size={13} className={isLiveTelemetry ? "text-emerald-500 animate-spin" : ""} />
-            <span>{isLiveTelemetry ? "Live 2.5s Sync" : "Dev Offline Sync"}</span>
+            <span>{isLiveTelemetry ? "Live 2.5s Sync" : "Connecting..."}</span>
           </div>
 
           {isAdmin && (

@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import HeatmapLayer from "./HeatmapLayer";
 import { useHeatData } from "../hooks/useHeatData";
-import { isNetworkError } from "../api/auth";
 
 // Severity color tokens
 const SEVERITY_COLORS = {
@@ -35,97 +34,9 @@ const TRUCK_COLORS = {
   idle: "#64748b",
 };
 
-// Realistic fallback demo data for dev testing when backend is offline
-const FALLBACK_INCIDENTS_PEAK = [
-  {
-    id: "KAM-01",
-    lat: 26.1909,
-    lng: 91.7653,
-    type: "landslide",
-    severity: "HIGH",
-    eventDate: "2026-07-28",
-    road: "Navagraha Hill Road, Guwahati",
-    district: "Kamrup Metropolitan",
-    note: "Guard wall collapsed onto road due to landslide (19-07-2026)",
-  },
-  {
-    id: "ASDMA-01",
-    lat: 26.5862,
-    lng: 93.3081,
-    type: "breach",
-    severity: "RED",
-    eventDate: "2026-07-28",
-    road: "Kaziranga Basapathar Ali",
-    district: "Golaghat",
-    note: "Breach occurred at 2 KM mark on the road (20-07-2026)",
-  },
-  {
-    id: "ASDMA-02",
-    lat: 26.16753,
-    lng: 92.5433,
-    type: "overtop",
-    severity: "HIGH",
-    eventDate: "2026-07-28",
-    road: "Kakatigaon to Hatigarh Road",
-    district: "Nagaon",
-    note: "Road damaged from 4.1 km to 4.5 km by floodwater (19-08-2026)",
-  },
-  {
-    id: "ASDMA-04",
-    lat: 26.4712,
-    lng: 93.9421,
-    type: "breach",
-    severity: "RED",
-    eventDate: "2026-07-28",
-    road: "Barichuwa Gaon Culvert",
-    district: "Golaghat",
-    note: "Washed away 1 RCC slab culvert at Barichuwa (20-07-2026)",
-  },
-  {
-    id: "ASDMA-05",
-    lat: 26.7531,
-    lng: 94.2045,
-    type: "erosion",
-    severity: "HIGH",
-    eventDate: "2026-07-28",
-    road: "Bhogdoi Rightbank Road to Chengeliati",
-    district: "Jorhat",
-    note: "Erosion damage length 75 meters at Mojia Bheti (20-07-2026)",
-  },
-];
-
-const FALLBACK_VEHICLES_BASE = [
-  {
-    vehicleId: "AS-01-FOOD-04",
-    lat: 26.54,
-    lng: 93.35,
-    speed: 0,
-    status: "blocked",
-    origin: "Guwahati",
-    destination: "Golaghat relief camp",
-    cargoType: "rice+medicines",
-  },
-  {
-    vehicleId: "AS-02-MED-11",
-    lat: 26.35,
-    lng: 92.68,
-    speed: 48,
-    status: "moving",
-    origin: "Guwahati",
-    destination: "Sivasagar",
-    cargoType: "medicines",
-  },
-  {
-    vehicleId: "AS-03-FUEL-07",
-    lat: 26.22,
-    lng: 91.95,
-    speed: 52,
-    status: "moving",
-    origin: "Guwahati",
-    destination: "Sivasagar via Nagaon",
-    cargoType: "fuel",
-  },
-];
+// Offline demo data commented out per user request:
+// const FALLBACK_INCIDENTS_PEAK = [ ... ];
+// const FALLBACK_VEHICLES_BASE = [ ... ];
 
 export default function LiveMap({
   token,
@@ -193,27 +104,24 @@ export default function LiveMap({
           }
           return;
         }
-      } catch (err) {
-        if (!isNetworkError(err)) {
-          // Silent catch for poll retry
-        }
+      } catch {
+        // Silent catch for poll retry
       }
 
-      // Offline dev bypass fallback
       if (isMountedRef.current) {
         setIsLiveConnected(false);
-        setVehicles((prev) => {
-          const list = prev.length > 0 ? prev : FALLBACK_VEHICLES_BASE;
-          return list.map((v, i) => {
-            if (v.status === "blocked") return v;
-            const drift = Math.sin(Date.now() / 2000 + i) * 0.002;
-            return {
-              ...v,
-              lat: v.lat + drift,
-              lng: v.lng + (i === 1 ? 0.001 : 0.0015),
-            };
-          });
-        });
+        // setVehicles((prev) => {
+        //   const list = prev.length > 0 ? prev : FALLBACK_VEHICLES_BASE;
+        //   return list.map((v, i) => {
+        //     if (v.status === "blocked") return v;
+        //     const drift = Math.sin(Date.now() / 2000 + i) * 0.002;
+        //     return {
+        //       ...v,
+        //       lat: v.lat + drift,
+        //       lng: v.lng + (i === 1 ? 0.001 : 0.0015),
+        //     };
+        //   });
+        // });
       }
     }
 
@@ -239,15 +147,15 @@ export default function LiveMap({
           const data = await res.json();
           setIncidents(data.incidents ?? []);
         } else if (!res.ok && !cancelled) {
-          setIncidents(
-            selectedDate === "2026-07-28" ? FALLBACK_INCIDENTS_PEAK : []
-          );
+          // Offline fallback commented out per user request:
+          // setIncidents(selectedDate === "2026-07-28" ? FALLBACK_INCIDENTS_PEAK : []);
+          setIncidents([]);
         }
       } catch {
         if (!cancelled) {
-          setIncidents(
-            selectedDate === "2026-07-28" ? FALLBACK_INCIDENTS_PEAK : []
-          );
+          // Offline fallback commented out per user request:
+          // setIncidents(selectedDate === "2026-07-28" ? FALLBACK_INCIDENTS_PEAK : []);
+          setIncidents([]);
         }
       }
 
@@ -269,31 +177,15 @@ export default function LiveMap({
           const data = await res.json();
           setAnalysis(data);
         } else if (!cancelled) {
-          setAnalysis(
-            selectedDate === "2026-07-28"
-              ? {
-                  blocked: true,
-                  delayMessage:
-                    "Severe breach near Kaziranga (KM 2) & Barichuwa culvert washaway. Traffic halted on NH-715.",
-                  recommendedRoad: "Divert north via Tezpur & NH-15 corridor",
-                  level: "RED",
-                }
-              : null
-          );
+          // Offline fallback commented out per user request:
+          // setAnalysis(selectedDate === "2026-07-28" ? { ... } : null);
+          setAnalysis(null);
         }
       } catch {
         if (!cancelled) {
-          setAnalysis(
-            selectedDate === "2026-07-28"
-              ? {
-                  blocked: true,
-                  delayMessage:
-                    "Severe breach near Kaziranga (KM 2) & Barichuwa culvert washaway. Traffic halted on NH-715.",
-                  recommendedRoad: "Divert north via Tezpur & NH-15 corridor",
-                  level: "RED",
-                }
-              : null
-          );
+          // Offline fallback commented out per user request:
+          // setAnalysis(selectedDate === "2026-07-28" ? { ... } : null);
+          setAnalysis(null);
         }
       }
     }

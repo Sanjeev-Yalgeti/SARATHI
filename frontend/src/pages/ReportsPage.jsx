@@ -13,73 +13,73 @@ import {
   Check,
 } from "lucide-react";
 import apiClient, { API_BASE } from "../api/client";
-import { isNetworkError } from "../api/auth";
+// import { isNetworkError } from "../api/auth";
 import SubmitReportModal from "../components/SubmitReportModal";
 import PhotoProofViewer from "../components/PhotoProofViewer";
 
-// Fallback seeded reports for dev offline evaluation
-const FALLBACK_REPORTS = [
-  {
-    id: "REP-9101",
-    lat: 26.5862,
-    lng: 93.3081,
-    type: "breach",
-    severity: "RED",
-    road: "Kaziranga Basapathar Ali (Golaghat)",
-    note: "Flood breach at 2 KM mark on the road. Water depth ~1.2m across 40 meters. Road washed away.",
-    photoUrl: "/bg.png",
-    eventDate: "2026-07-28",
-    createdAt: "2026-07-28T07:45:00.000Z",
-    status: "pending",
-    distanceMeters: 320,
-    reporter: "AS-01-FOOD-04",
-  },
-  {
-    id: "REP-9102",
-    lat: 26.1909,
-    lng: 91.7653,
-    type: "landslide",
-    severity: "HIGH",
-    road: "Navagraha Hill Road, Guwahati",
-    note: "Retaining guard wall collapsed onto road due to heavy rainfall. Passage blocked for large trucks.",
-    photoUrl: "/loginBg.png",
-    eventDate: "2026-07-28",
-    createdAt: "2026-07-28T08:15:00.000Z",
-    status: "approved",
-    distanceMeters: 180,
-    reporter: "Citizen (Public)",
-  },
-  {
-    id: "REP-9103",
-    lat: 26.4712,
-    lng: 93.9421,
-    type: "breach",
-    severity: "RED",
-    road: "Barichuwa Gaon Culvert (Golaghat)",
-    note: "1 RCC slab culvert washed away completely by surging floodwaters at Barichuwa village.",
-    photoUrl: "/mountain.png",
-    eventDate: "2026-07-28",
-    createdAt: "2026-07-28T09:00:00.000Z",
-    status: "pending",
-    distanceMeters: 450,
-    reporter: "Citizen (Public)",
-  },
-  {
-    id: "REP-9104",
-    lat: 26.1675,
-    lng: 92.5433,
-    type: "overtop",
-    severity: "MEDIUM",
-    road: "Kakatigaon to Hatigarh (Nagaon)",
-    note: "Road overtopped by 25cm overflow from nearby canal from KM 4.1 to 4.5. Light vehicles diverted.",
-    photoUrl: null,
-    eventDate: "2026-07-28",
-    createdAt: "2026-07-28T09:30:00.000Z",
-    status: "approved",
-    distanceMeters: 620,
-    reporter: "AS-03-FUEL-07",
-  },
-];
+// Fallback seeded reports for dev offline evaluation (commented out per user request)
+// const FALLBACK_REPORTS = [
+//   {
+//     id: "REP-9101",
+//     lat: 26.5862,
+//     lng: 93.3081,
+//     type: "breach",
+//     severity: "RED",
+//     road: "Kaziranga Basapathar Ali (Golaghat)",
+//     note: "Flood breach at 2 KM mark on the road. Water depth ~1.2m across 40 meters. Road washed away.",
+//     photoUrl: "/bg.png",
+//     eventDate: "2026-07-28",
+//     createdAt: "2026-07-28T07:45:00.000Z",
+//     status: "pending",
+//     distanceMeters: 320,
+//     reporter: "AS-01-FOOD-04",
+//   },
+//   {
+//     id: "REP-9102",
+//     lat: 26.1909,
+//     lng: 91.7653,
+//     type: "landslide",
+//     severity: "HIGH",
+//     road: "Navagraha Hill Road, Guwahati",
+//     note: "Retaining guard wall collapsed onto road due to heavy rainfall. Passage blocked for large trucks.",
+//     photoUrl: "/loginBg.png",
+//     eventDate: "2026-07-28",
+//     createdAt: "2026-07-28T08:15:00.000Z",
+//     status: "approved",
+//     distanceMeters: 180,
+//     reporter: "Citizen (Public)",
+//   },
+//   {
+//     id: "REP-9103",
+//     lat: 26.4712,
+//     lng: 93.9421,
+//     type: "breach",
+//     severity: "RED",
+//     road: "Barichuwa Gaon Culvert (Golaghat)",
+//     note: "1 RCC slab culvert washed away completely by surging floodwaters at Barichuwa village.",
+//     photoUrl: "/mountain.png",
+//     eventDate: "2026-07-28",
+//     createdAt: "2026-07-28T09:00:00.000Z",
+//     status: "pending",
+//     distanceMeters: 450,
+//     reporter: "Citizen (Public)",
+//   },
+//   {
+//     id: "REP-9104",
+//     lat: 26.1675,
+//     lng: 92.5433,
+//     type: "overtop",
+//     severity: "MEDIUM",
+//     road: "Kakatigaon to Hatigarh (Nagaon)",
+//     note: "Road overtopped by 25cm overflow from nearby canal from KM 4.1 to 4.5. Light vehicles diverted.",
+//     photoUrl: null,
+//     eventDate: "2026-07-28",
+//     createdAt: "2026-07-28T09:30:00.000Z",
+//     status: "approved",
+//     distanceMeters: 620,
+//     reporter: "AS-03-FUEL-07",
+//   },
+// ];
 
 // Helper to parse status and verified metadata from note
 function parseReportData(rawReport) {
@@ -165,9 +165,11 @@ export default function ReportsPage({ c, userRole = "ADMIN" }) {
           setReports(res.data.reports.map(parseReportData));
         }
       } catch (err) {
-        if (!cancelled && isNetworkError(err)) {
-          setReports(FALLBACK_REPORTS.map(parseReportData));
-        }
+        // Offline fallback commented out per user request:
+        // if (!cancelled && isNetworkError(err)) {
+        //   setReports(FALLBACK_REPORTS.map(parseReportData));
+        // }
+        console.error("[ReportsPage] Failed to load reports:", err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -189,23 +191,38 @@ export default function ReportsPage({ c, userRole = "ADMIN" }) {
         prev.map((r) => (r.id === reportId ? { ...r, status: decision } : r))
       );
     } catch (err) {
-      if (isNetworkError(err)) {
-        // Offline dev fallback
-        setReports((prev) =>
-          prev.map((r) => (r.id === reportId ? { ...r, status: decision } : r))
-        );
-        return;
-      }
+      // Offline fallback commented out per user request:
+      // if (isNetworkError(err)) {
+      //   setReports((prev) =>
+      //     prev.map((r) => (r.id === reportId ? { ...r, status: decision } : r))
+      //   );
+      //   return;
+      // }
       alert(err.response?.data?.error || "Failed to update report decision.");
     } finally {
       setProcessingId(null);
     }
   };
 
-  // Download ASDMA PDF Bulletin
-  const handleDownloadBulletin = () => {
-    const url = `${API_BASE}/api/bulletin.pdf?date=2026-08-09`;
-    window.open(url, "_blank");
+  // Download ASDMA PDF Bulletin with Bearer token authentication
+  const handleDownloadBulletin = async () => {
+    try {
+      const res = await apiClient.get("/api/bulletin.pdf?date=2026-08-09", {
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "sarathi-flood-bulletin-2026-08-09.pdf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[ReportsPage] Failed to download PDF bulletin:", err);
+      alert("Failed to download PDF bulletin.");
+    }
   };
 
   // Filtered reports

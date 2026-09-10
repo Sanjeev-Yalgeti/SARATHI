@@ -11,7 +11,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import apiClient from "../api/client";
-import { isNetworkError } from "../api/auth";
 import { haversineDistanceKm, formatDistance } from "../utils/geo";
 
 // Known hotspots across NER corridor for quick evaluation
@@ -179,35 +178,14 @@ export default function SubmitReportModal({
         onClose();
       }, 1500);
     } catch (err) {
-      if (isNetworkError(err)) {
-        // Dev offline fallback report creation
-        const mockReport = {
-          id: `REP-${Date.now().toString().slice(-5)}`,
-          lat: incidentLat,
-          lng: incidentLng,
-          userLat,
-          userLng,
-          distanceKm,
-          type,
-          severity,
-          road,
-          note,
-          photoUrl: photoPreview || "/loginBg.png",
-          eventDate: new Date().toISOString().split("T")[0],
-          status: "pending",
-          createdAt: new Date().toISOString(),
-        };
-
-        setSuccessMsg("Report submitted! Saved in local offline store for Admin review.");
-        if (onSuccess) {
-          onSuccess(mockReport);
-        }
-        setTimeout(() => {
-          onClose();
-        }, 1500);
-        return;
-      }
-      setError(err.response?.data?.error || err.message || "Failed to submit report.");
+      // Offline fallback commented out per user request:
+      // if (isNetworkError(err)) {
+      //   const mockReport = { ... };
+      //   setSuccessMsg("Report submitted! Saved in local offline store for Admin review.");
+      //   ...
+      //   return;
+      // }
+      setError(err.response?.data?.error || err.message || "Failed to submit report. Please verify backend is reachable.");
     } finally {
       setIsSubmitting(false);
     }

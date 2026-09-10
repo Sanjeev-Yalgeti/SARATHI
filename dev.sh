@@ -16,7 +16,15 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-port_busy() { lsof -i ":$1" >/dev/null 2>&1; }
+port_busy() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -i ":$1" >/dev/null 2>&1
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ano 2>/dev/null | grep -q ":$1"
+  else
+    return 1
+  fi
+}
 
 # ── pre-flight ───────────────────────────────────────────────────
 [ -f "$ROOT/backend/.env" ] || { echo "missing backend/.env — run ./setup.sh first"; exit 1; }

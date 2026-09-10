@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { palette } from "./constants";
 import TopNav from "./components/TopNav";
+import GoldenPathGuide from "./components/GoldenPathGuide";
 import { getStoredToken, getStoredUser, getProfile, logout } from "./api/auth";
 
 import HomePage from "./pages/HomePage";
@@ -135,11 +136,11 @@ export default function SarathiApp() {
         )}
 
         {effectiveActive === "Analytics" && (
-          <AnalyticsPage c={c} />
+          <AnalyticsPage c={c} userRole={userRole} currentUser={currentUser} setActive={setActive} />
         )}
 
         {effectiveActive === "Simulation" && (
-          <SimulationPage c={c} />
+          <SimulationPage c={c} userRole={userRole} currentUser={currentUser} setActive={setActive} />
         )}
 
         {effectiveActive === "Resources" && (
@@ -147,6 +148,15 @@ export default function SarathiApp() {
         )}
 
       </div>
+
+      {/* Interactive Golden Path Demo Guide Widget */}
+      <GoldenPathGuide
+        c={c}
+        setActive={setActive}
+        setIsLoggedIn={setIsLoggedIn}
+        setUserRole={setUserRole}
+        setCurrentUser={setCurrentUser}
+      />
     </div>
   );
 }

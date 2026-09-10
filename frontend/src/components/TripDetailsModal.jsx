@@ -49,24 +49,25 @@ export default function TripDetailsModal({
         if (!cancelled && res.data) {
           setAnalysis(res.data);
         }
-      } catch {
-        // Fallback analysis simulation for dev offline
-        if (!cancelled) {
-          setAnalysis({
-            blocked: isBlocked || trip.destination.toLowerCase().includes("golaghat"),
-            delayMessage: isBlocked
-              ? "Severe flood breach reported on NH-715 near Kaziranga & Barichuwa culvert. Road washed away."
-              : "Moderate rain along the Brahmaputra south bank; roads passable with caution.",
-            recommendedRoad: isBlocked
-              ? "Divert north via Tezpur & NH-15 corridor"
-              : "Standard NH-27/NH-37 corridor",
-            risk: {
-              level: isBlocked ? "RED" : "MEDIUM",
-              landslide_prob: isBlocked ? 0.82 : 0.35,
-              score: isBlocked ? 88 : 45,
-            },
-          });
-        }
+      } catch (err) {
+        // Fallback analysis simulation commented out per user request:
+        // if (!cancelled) {
+        //   setAnalysis({
+        //     blocked: isBlocked || trip.destination.toLowerCase().includes("golaghat"),
+        //     delayMessage: isBlocked
+        //       ? "Severe flood breach reported on NH-715 near Kaziranga & Barichuwa culvert. Road washed away."
+        //       : "Moderate rain along the Brahmaputra south bank; roads passable with caution.",
+        //     recommendedRoad: isBlocked
+        //       ? "Divert north via Tezpur & NH-15 corridor"
+        //       : "Standard NH-27/NH-37 corridor",
+        //     risk: {
+        //       level: isBlocked ? "RED" : "MEDIUM",
+        //       landslide_prob: isBlocked ? 0.82 : 0.35,
+        //       score: isBlocked ? 88 : 45,
+        //     },
+        //   });
+        // }
+        console.error("[TripDetailsModal] Failed to analyze route corridor:", err);
       } finally {
         if (!cancelled) setLoadingAnalysis(false);
       }
