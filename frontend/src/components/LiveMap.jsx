@@ -1,10 +1,14 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, Fragment } from "react";
+import L from "leaflet";
 import {
   CircleMarker,
   MapContainer,
+  Marker,
+  Polyline,
   Popup,
   TileLayer,
   Tooltip,
+  useMap,
 } from "react-leaflet";
 import {
   Radio,
@@ -15,6 +19,8 @@ import {
   ShieldAlert,
   Info,
   Flame,
+  Route as RouteIcon,
+  Crosshair,
 } from "lucide-react";
 import HeatmapLayer from "./HeatmapLayer";
 import { useHeatData } from "../hooks/useHeatData";
@@ -37,6 +43,85 @@ const TRUCK_COLORS = {
 // Offline demo data commented out per user request:
 // const FALLBACK_INCIDENTS_PEAK = [ ... ];
 // const FALLBACK_VEHICLES_BASE = [ ... ];
+
+// Corridor towns (trips store origin/destination as free-text names, so resolve
+// them to coordinates for GET /api/routes?from=lat,lng&to=lat,lng).
+const PLACE_COORDS = [
+  { match: "guwahati", label: "Guwahati", lat: 26.1844, lng: 91.7458 },
+  { match: "nagaon", label: "Nagaon", lat: 26.35, lng: 92.68 },
+  { match: "golaghat", label: "Golaghat", lat: 26.51, lng: 93.97 },
+  { match: "sivasagar", label: "Sivasagar", lat: 27.14, lng: 94.63 },
+  { match: "jorhat", label: "Jorhat", lat: 26.75, lng: 94.21 },
+];
+
+function resolvePlace(name) {
+  // Earliest-mentioned town wins ("Sivasagar via Nagaon" → Sivasagar, not the
+  // via-point), so multi-name strings resolve to the true endpoint.
+  const text = String(name ?? "").toLowerCase();
+  let best = null;
+  let bestIdx = Infinity;
+  for (const p of PLACE_COORDS) {
+    const i = text.indexOf(p.match);
+    if (i !== -1 && i < bestIdx) {
+      best = p;
+      bestIdx = i;
+    }
+  }
+  return best;
+}
+
+// Split a route line at the truck's position: travelled part grey (like
+// Google Maps), remaining part blue. Index-based split is enough for display.
+function splitRouteAt(line, lat, lng) {
+  if (!Array.isArray(line) || line.length < 2) return { done: [], remaining: line ?? [] };
+  let bi = 0;
+  let bd = Infinity;
+  for (let i = 0; i < line.length; i++) {
+    const d = (line[i][0] - lat) ** 2 + (line[i][1] - lng) ** 2;
+    if (d < bd) {
+      bd = d;
+      bi = i;
+    }
+  }
+  return { done: line.slice(0, bi + 1), remaining: line.slice(bi) };
+}
+
+// Flies the map to a newly tracked truck exactly once (on selection, not on
+// every 2 s poll — so the admin can still pan freely while tracking).
+function FlyToTracked({ target }) {
+  const map = useMap();
+  const flownRef = useRef(null);
+  useEffect(() => {
+    if (target && flownRef.current !== target.id) {
+      flownRef.current = target.id;
+      map.flyTo(target.center, Math.max(map.getZoom(), 10), { duration: 1.2 });
+    }
+    if (!target) flownRef.current = null;
+  }, [map, target]);
+  return null;
+}
+
+// Google-style source (A, green) / destination (B, red) pins.
+function endPinIcon(letter) {
+  return L.divIcon({
+    className: "map-pin-wrap",
+    html: `<div class="map-pin ${letter === "A" ? "map-pin-a" : "map-pin-b"}"><span>${letter}</span></div>`,
+    iconSize: [28, 38],
+    iconAnchor: [14, 35],
+  });
+}
+const PIN_A = endPinIcon("A");
+const PIN_B = endPinIcon("B");
+
+// Google-Maps-style pick: the alternate becomes the recommended (blue) line
+// when the corridor banner reports a blockage, primary turns grey.
+function pickRecommended(route, blocked) {
+  const altOk = route.alternate.length > 1;
+  if (blocked && altOk) {
+    return { main: route.alternate, mainKind: "alternate", other: route.primary };
+  }
+  return { main: route.primary, mainKind: "primary", other: altOk ? route.alternate : [] };
+}
 
 export default function LiveMap({
   token,
@@ -64,7 +149,12 @@ export default function LiveMap({
   const [showIncidents, setShowIncidents] = useState(initialShowIncidents);
   const [showVehicles, setShowVehicles] = useState(true);
   const [showBanner, setShowBanner] = useState(initialShowBanner);
-  const [showHeatmap, setShowHeatmap] = useState(initialShowHeatmap);
+  const [showRoutes, setShowRoutes] = useState(true);
+  const [routeGeo, setRouteGeo] = useState({});
+  const [showHeatmap, setShowHeatmap] = useState(
+    // Drivers get a clean guidance map by default (heatmap off, toggleable).
+    initialShowHeatmap && userRole !== "DRIVER" && userRole !== "restricted"
+  );
   const [heatMode, setHeatMode] = useState(initialHeatMode);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
 
@@ -88,6 +178,24 @@ export default function LiveMap({
   const headers = useMemo(() => {
     return jwt ? { Authorization: `Bearer ${jwt}` } : {};
   }, [jwt]);
+
+  // Keep the backend scenario clock in sync when an admin switches dates here,
+  // so Live Map + Simulation page replay the same date. Best-effort: never
+  // break the local date filter if the POST fails (offline / driver token).
+  async function handleDateSelect(nextDate) {
+    setSelectedDate(nextDate);
+    if (userRole !== "ADMIN") return;
+    if (!jwt || jwt.startsWith("dev_bypass_token_")) return;
+    try {
+      await fetch(`${base}/api/simulation/date`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ date: nextDate }),
+      });
+    } catch {
+      /* silent — local incidents/vehicles already refetch for nextDate */
+    }
+  }
 
   // 1. Vehicle Polling (every 2s per FRONTEND_HANDOFF.md §5)
   useEffect(() => {
@@ -212,7 +320,184 @@ export default function LiveMap({
   }, [vehicles, showVehicles, isDriver, driverVehicleId]);
 
   const displayIncidents = showIncidents ? incidents : [];
-  const displayBanner = showBanner ? analysis : null;
+  // Drivers always see the risk banner (safety-critical); only admins toggle it.
+  const displayBanner = showBanner || isDriver ? analysis : null;
+
+  // A→B route lines: one unique origin→destination pair per visible truck
+  // (drivers see only their own truck → only their own route).
+  const routePairs = useMemo(() => {
+    const seen = new Map();
+    for (const v of displayVehicles) {
+      const from = resolvePlace(v.origin);
+      const to = resolvePlace(v.destination);
+      if (!from || !to) continue;
+      const key = `${from.label}→${to.label}`;
+      if (!seen.has(key)) seen.set(key, { key, from, to });
+    }
+    return [...seen.values()];
+  }, [displayVehicles]);
+  const routePairKeys = routePairs.map((p) => p.key).join("|");
+  const fetchedRouteKeys = useRef(new Set());
+
+  // 3. Route geometry (Google → OSRM → straight-line fallback, same as banner).
+  // Geometry is date-independent, so fetch once per pair and cache.
+  useEffect(() => {
+    if (routePairs.length === 0) return;
+    let cancelled = false;
+    async function loadRoutes() {
+      for (const pair of routePairs) {
+        if (fetchedRouteKeys.current.has(pair.key)) continue;
+        fetchedRouteKeys.current.add(pair.key);
+        try {
+          const res = await fetch(
+            `${base}/api/routes?from=${pair.from.lat},${pair.from.lng}&to=${pair.to.lat},${pair.to.lng}`,
+            { headers }
+          );
+          if (!res.ok) throw new Error(`route ${res.status}`);
+          const data = await res.json();
+          const toLatLng = (line) =>
+            Array.isArray(line) ? line.map((pt) => [pt.lat, pt.lng]) : [];
+          if (!cancelled) {
+            const geo = {
+              label: pair.key,
+              primary: toLatLng(data.primary),
+              alternate: toLatLng(data.alternate),
+              source: data.source ?? "unknown",
+              distance_km: data.distance_km ?? null,
+              duration_min: data.duration_min ?? null,
+            };
+            setRouteGeo((prev) => (prev[pair.key] ? prev : { ...prev, [pair.key]: geo }));
+          }
+        } catch {
+          // Offline fallback: straight A→B line so drivers still see their corridor.
+          if (!cancelled) {
+            const geo = {
+              label: pair.key,
+              primary: [
+                [pair.from.lat, pair.from.lng],
+                [pair.to.lat, pair.to.lng],
+              ],
+              alternate: [],
+              source: "fallback",
+              distance_km: null,
+              duration_min: null,
+            };
+            setRouteGeo((prev) => (prev[pair.key] ? prev : { ...prev, [pair.key]: geo }));
+          }
+        }
+      }
+    }
+    loadRoutes();
+    return () => {
+      cancelled = true;
+    };
+  }, [base, headers, routePairs, routePairKeys]);
+
+  const displayRoutes = showRoutes
+    ? routePairs.map((p) => routeGeo[p.key]).filter(Boolean)
+    : [];
+
+  // Driver guidance: live GPS → destination (Google-Maps-style "which route
+  // do I take"). Corridor lines above start at the depot; this one starts
+  // where the truck actually is. Position is quantized to ~1 km so it only
+  // refetches after real movement, not on every 2 s poll.
+  const driverTruck = isDriver ? displayVehicles[0] ?? null : null;
+  const driverDest = driverTruck ? resolvePlace(driverTruck.destination) : null;
+  // Arrived trucks park at the destination: no guidance line (a from==to
+  // route collapses to a point), just the "Arrived" strip below.
+  const driverArrived = driverTruck?.status === "idle";
+  const [guideGeo, setGuideGeo] = useState(null);
+  const guideKey =
+    driverTruck && driverDest && !driverArrived
+      ? `${driverTruck.vehicleId}|${driverTruck.lat.toFixed(2)},${driverTruck.lng.toFixed(2)}→${driverDest.label}`
+      : "";
+  useEffect(() => {
+    if (!guideKey || !driverTruck || !driverDest) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale guidance on logout/unresolvable dest
+      setGuideGeo(null);
+      return;
+    }
+    let cancelled = false;
+    async function loadGuide() {
+      const toLatLng = (line) =>
+        Array.isArray(line) ? line.map((pt) => [pt.lat, pt.lng]) : [];
+      try {
+        const res = await fetch(
+          `${base}/api/routes?from=${driverTruck.lat},${driverTruck.lng}&to=${driverDest.lat},${driverDest.lng}`,
+          { headers }
+        );
+        if (!res.ok) throw new Error(`guide ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) {
+          setGuideGeo({
+            label: `You→${driverDest.label}`,
+            destLabel: driverDest.label,
+            primary: toLatLng(data.primary),
+            alternate: toLatLng(data.alternate),
+            source: data.source ?? "unknown",
+            distance_km: data.distance_km ?? null,
+            duration_min: data.duration_min ?? null,
+          });
+        }
+      } catch {
+        // Offline fallback: straight line from truck to destination.
+        if (!cancelled) {
+          setGuideGeo({
+            label: `You→${driverDest.label}`,
+            destLabel: driverDest.label,
+            primary: [
+              [driverTruck.lat, driverTruck.lng],
+              [driverDest.lat, driverDest.lng],
+            ],
+            alternate: [],
+            source: "fallback",
+            distance_km: null,
+            duration_min: null,
+          });
+        }
+      }
+    }
+    loadGuide();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- guideKey carries position+dests
+  }, [base, guideKey]);
+
+  // Drivers see only their live guidance line; admins see corridor lines.
+  const guidanceRoutes = isDriver && guideGeo ? [guideGeo] : displayRoutes;
+
+  // Click-to-track (admin portal): click a truck to isolate its live path.
+  // Everything else dims so the tracked corridor is the only thing on screen.
+  const [trackedId, setTrackedId] = useState(null);
+  const trackedTruck = trackedId
+    ? displayVehicles.find((v) => v.vehicleId === trackedId) ?? null
+    : null;
+  const trackedPair = useMemo(() => {
+    if (!trackedTruck) return null;
+    const from = resolvePlace(trackedTruck.origin);
+    const to = resolvePlace(trackedTruck.destination);
+    if (!from || !to) return null;
+    return { key: `${from.label}→${to.label}`, from, to };
+  }, [trackedTruck]);
+  const trackedGeo = (() => {
+    if (!trackedTruck) return null;
+    if (isDriver && guideGeo && trackedTruck.vehicleId === driverTruck?.vehicleId) return guideGeo;
+    if (!trackedPair) return null;
+    return routeGeo[trackedPair.key] ?? null;
+  })();
+  const visibleRoutes = trackedId ? (trackedGeo ? [trackedGeo] : []) : guidanceRoutes;
+  const visiblePairs = trackedId ? (trackedPair ? [trackedPair] : []) : routePairs;
+  const splitTarget = trackedTruck ?? (isDriver ? driverTruck : null);
+  // Fly-to point captured at selection time (not per poll).
+  const flyTarget = useMemo(
+    () =>
+      trackedTruck
+        ? { id: trackedId, center: [trackedTruck.lat, trackedTruck.lng] }
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fly once per selection
+    [trackedId]
+  );
 
   // Tile layer URL based on current theme
   const tileUrl =
@@ -228,7 +513,7 @@ export default function LiveMap({
         <div className="flex items-center gap-2 text-xs sm:text-sm">
           <Calendar size={16} className="text-[#0a8754] shrink-0" />
           <span className="font-bold text-gray-700 dark:text-gray-300">
-            Scenario Date:
+            {isDriver ? "View date:" : "Scenario Date:"}
           </span>
           <div className="flex items-center bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg">
             {[
@@ -239,7 +524,7 @@ export default function LiveMap({
               <button
                 key={d.date}
                 type="button"
-                onClick={() => setSelectedDate(d.date)}
+                onClick={() => handleDateSelect(d.date)}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
                   selectedDate === d.date
                     ? "bg-[#0a8754] text-white shadow-sm"
@@ -282,7 +567,22 @@ export default function LiveMap({
             <span>Fleet ({displayVehicles.length})</span>
           </button>
 
-          {/* Banner Toggle */}
+          {/* Routes Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowRoutes(!showRoutes)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+              showRoutes
+                ? "bg-sky-50 dark:bg-sky-950/30 text-sky-700 border-sky-200 dark:border-sky-900"
+                : "bg-gray-100 dark:bg-slate-800 text-gray-500 border-transparent"
+            }`}
+            title="Toggle A→B route lines (primary + alternate)"
+          >
+            <RouteIcon size={13} />
+            <span>Routes ({visibleRoutes.length})</span>
+          </button>
+          {/* Banner Toggle (admin only — drivers always see it) */}
+          {!isDriver && (
           <button
             type="button"
             onClick={() => setShowBanner(!showBanner)}
@@ -295,8 +595,11 @@ export default function LiveMap({
             <Layers size={13} />
             <span>Risk Banner</span>
           </button>
+          )}
 
-          {/* Heatmap Layer Toggle */}
+          {/* Heatmap Layer Toggle (admin only — off by default for drivers) */}
+          {!isDriver && (
+          <>
           <button
             type="button"
             onClick={() => setShowHeatmap(!showHeatmap)}
@@ -346,6 +649,8 @@ export default function LiveMap({
               </button>
             </div>
           )}
+          </>
+          )}
 
           {/* Live Polling Badge */}
           <div
@@ -389,6 +694,56 @@ export default function LiveMap({
         </div>
       )}
 
+      {/* Driver guidance strip — "which route do I take" at a glance */}
+      {isDriver && showRoutes && (guideGeo || (driverArrived && driverDest)) && (
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50 text-sky-900 shadow-sm text-sm dark:bg-sky-950/40 dark:border-sky-900 dark:text-sky-200">
+          <div className="p-1.5 rounded-lg bg-[#1a73e8] text-white shrink-0">
+            <RouteIcon size={16} />
+          </div>
+          <div className="flex-1 leading-snug">
+            {guideGeo ? (
+              <>
+                <span className="font-extrabold">Your route → {guideGeo.destLabel}</span>
+                {guideGeo.distance_km != null && (
+                  <span> · {guideGeo.distance_km} km · ~{guideGeo.duration_min} min</span>
+                )}
+                <span className="block text-xs opacity-80">
+                  {displayBanner?.blocked
+                    ? "Primary blocked — follow the blue detour."
+                    : "Follow the blue line."}{" "}
+                  (via {guideGeo.source})
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-extrabold">Arrived at {driverDest.label} ✓</span>
+                <span className="block text-xs opacity-80">
+                  Trip complete — press Start Simulation to replay it for the judges.
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tracking chip — who is isolated on screen right now */}
+      {trackedId && (
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-sky-300 bg-sky-100 text-sky-900 shadow-sm text-xs font-bold dark:bg-sky-950/50 dark:border-sky-800 dark:text-sky-200">
+          <Crosshair size={14} className="animate-pulse" />
+          <span>
+            Tracking {trackedId}
+            {trackedTruck?.diverted ? " • on detour" : ""} — click the truck again or
+          </span>
+          <button
+            type="button"
+            onClick={() => setTrackedId(null)}
+            className="px-2 py-0.5 rounded-md bg-[#1a73e8] text-white cursor-pointer hover:opacity-90"
+          >
+            Show all
+          </button>
+        </div>
+      )}
+
       {/* Leaflet Map Frame */}
       <div
         style={{ height, minHeight: 440 }}
@@ -404,6 +759,7 @@ export default function LiveMap({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url={tileUrl}
           />
+          <FlyToTracked target={flyTarget} />
 
           {/* Risk Heatmap Layer (underneath markers) */}
           {showHeatmap && (
@@ -422,26 +778,114 @@ export default function LiveMap({
             />
           )}
 
-          {/* Vehicle Markers */}
+          {/* A→B Route Lines — Google-style: remaining blue w/ white casing,
+              travelled grey, alternative grey. Alternate wins on blockage.
+              Click-to-track isolates the tracked truck's path. */}
+          {visibleRoutes.map((r) => {
+            const { main, mainKind, other } = pickRecommended(r, displayBanner?.blocked);
+            const info =
+              `${r.label}` +
+              (r.distance_km != null ? ` · ${r.distance_km} km` : "") +
+              (r.duration_min != null ? ` · ~${r.duration_min} min` : "") +
+              ` (${r.source})`;
+            // Grey out the part behind the tracked/driving truck.
+            const split =
+              splitTarget && main.length > 1
+                ? splitRouteAt(main, splitTarget.lat, splitTarget.lng)
+                : { done: [], remaining: main };
+            return (
+              <Fragment key={r.label}>
+                {other.length > 1 && (
+                  <Polyline
+                    positions={other}
+                    pathOptions={{ color: "#9aa0a6", weight: 4, opacity: 0.8 }}
+                  >
+                    <Tooltip sticky>
+                      <span className="font-bold">Alternative</span> &bull; {info}
+                    </Tooltip>
+                  </Polyline>
+                )}
+                {split.done.length > 1 && (
+                  <Polyline
+                    positions={split.done}
+                    pathOptions={{ color: "#9aa0a6", weight: 3, opacity: 0.7 }}
+                  >
+                    <Tooltip sticky>
+                      <span className="font-bold">Travelled</span> &bull; {info}
+                    </Tooltip>
+                  </Polyline>
+                )}
+                {split.remaining.length > 1 && (
+                  <Polyline
+                    positions={split.remaining}
+                    pathOptions={{ color: "#ffffff", weight: 9, opacity: 0.9, interactive: false }}
+                  />
+                )}
+                {split.remaining.length > 1 && (
+                  <Polyline
+                    positions={split.remaining}
+                    pathOptions={{ color: "#1a73e8", weight: 5, opacity: 1 }}
+                  >
+                    <Tooltip sticky>
+                      <span className="font-bold">
+                        {mainKind === "alternate" ? "Recommended (detour)" : "Recommended"}
+                      </span>{" "}
+                      &bull; {info}
+                    </Tooltip>
+                  </Polyline>
+                )}
+              </Fragment>
+            );
+          })}
+
+          {/* Google-style source (A) / destination (B) pins per route */}
+          {showRoutes &&
+            visiblePairs.map((p) => (
+              <Fragment key={`pins-${p.key}`}>
+                <Marker position={[p.from.lat, p.from.lng]} icon={PIN_A}>
+                  <Tooltip direction="top" offset={[0, -20]} opacity={0.95}>
+                    <span className="font-bold">Source:</span> {p.from.label}
+                  </Tooltip>
+                </Marker>
+                <Marker position={[p.to.lat, p.to.lng]} icon={PIN_B}>
+                  <Tooltip direction="top" offset={[0, -20]} opacity={0.95}>
+                    <span className="font-bold">Destination:</span> {p.to.label}
+                  </Tooltip>
+                </Marker>
+              </Fragment>
+            ))}
+
+          {/* Vehicle Markers — click to track a truck's live path */}
           {displayVehicles.map((v) => {
             const isBlocked = v.status === "blocked";
             const color = TRUCK_COLORS[v.status] ?? "#64748b";
+            const isTracked = trackedId === v.vehicleId;
+            const dimmed = trackedId && !isTracked;
 
             return (
               <CircleMarker
                 key={v.vehicleId}
                 center={[v.lat, v.lng]}
-                radius={isBlocked ? 10 : 8}
+                radius={isTracked ? 11 : isBlocked ? 10 : 8}
                 pathOptions={{
-                  color,
-                  fillColor: color,
-                  fillOpacity: 0.9,
-                  weight: 2.5,
+                  color: isTracked ? "#1a73e8" : color,
+                  fillColor: isTracked ? "#1a73e8" : color,
+                  fillOpacity: dimmed ? 0.3 : 0.9,
+                  opacity: dimmed ? 0.4 : 1,
+                  weight: isTracked ? 3.5 : 2.5,
+                }}
+                eventHandlers={{
+                  click: () => setTrackedId((t) => (t === v.vehicleId ? null : v.vehicleId)),
                 }}
               >
-                <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
-                  <span className="font-bold">{v.vehicleId}</span> &bull;{" "}
-                  <span className="capitalize">{v.status}</span>
+                <Tooltip
+                  direction="top"
+                  offset={[0, -12]}
+                  opacity={dimmed ? 0.6 : 1}
+                  permanent
+                  className="truck-label"
+                >
+                  {v.vehicleId}{v.diverted ? " • detour" : ""}
                 </Tooltip>
                 <Popup>
                   <div className="text-xs p-1">
@@ -462,6 +906,11 @@ export default function LiveMap({
                       </div>
                       <div>
                         <b>Route:</b> {v.origin} &rarr; {v.destination}
+                        {v.diverted && (
+                          <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold text-white bg-sky-600">
+                            detour
+                          </span>
+                        )}
                       </div>
                       <div>
                         <b>Speed:</b> {v.speed} km/h
@@ -561,6 +1010,14 @@ export default function LiveMap({
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#ea580c]" />
               <span>HIGH Risk</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-4 h-1 rounded-full bg-[#1a73e8]" />
+              <span>Recommended Route</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-4 h-1 rounded-full bg-[#9aa0a6]" />
+              <span>Alternative</span>
             </div>
           </div>
 

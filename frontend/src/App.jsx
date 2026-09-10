@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { palette } from "./constants";
 import TopNav from "./components/TopNav";
 import GoldenPathGuide from "./components/GoldenPathGuide";
+import AlertToasts from "./components/AlertToasts";
+import useAlertsSocket from "./hooks/useAlertsSocket";
 import { getStoredToken, getStoredUser, getProfile, logout } from "./api/auth";
 
 import HomePage from "./pages/HomePage";
@@ -20,6 +22,9 @@ export default function SarathiApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState(null); // "ADMIN" | "DRIVER"
   const [currentUser, setCurrentUser] = useState(null);
+
+  // Live alert popups (Socket.io) for every logged-in role.
+  const { toasts, dismiss } = useAlertsSocket(isLoggedIn, currentUser?.id);
 
   // Session Hydration on page load / refresh (per FRONTEND_HANDOFF.md §3)
   useEffect(() => {
@@ -84,6 +89,8 @@ export default function SarathiApp() {
 
   return (
     <div style={{ background: c.pageBg, minHeight: "100vh", minWidth: "100vw" }} className="font-sans">
+      {/* Real-time alert popups — admin + driver dashboards */}
+      {isLoggedIn && <AlertToasts toasts={toasts} onDismiss={dismiss} />}
       {/* Fixed overlay nav — sits above every page */}
       {effectiveActive !== "Login" && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-transparent pointer-events-none">
