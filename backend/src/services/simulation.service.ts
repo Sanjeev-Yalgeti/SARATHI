@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { emitBlockageAlert, emitRiskAlert, emitVehicleUpdate } from '../sockets/index.js';
+import { emitBlockageAlert, emitDetourAlert, emitRiskAlert, emitVehicleUpdate } from '../sockets/index.js';
 import { prisma } from './db.js';
 import { askMl, type MlAssessment, type ScenarioOverrides } from './ml-client.js';
 import { nearestDistrict } from './ml-district.js';
@@ -15,8 +15,7 @@ export type Coordinates = {
 
 // Corridor: Guwahati → Golaghat → Sivasagar via NH27/NH37 (naman_alone.md step 3).
 // OSRM wants lng,lat pairs joined by ';'.
-const ROUTES: Record<string, Coordinates[]> = {
-  'AS-01-FOOD-04': [
+const ROUTES: Record<string, Coordinates[]> = {  'AS-01-FOOD-04': [
     { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
     { lng: 93.97, lat: 26.51 }, // Golaghat relief camp
   ],
@@ -34,14 +33,28 @@ const ROUTES: Record<string, Coordinates[]> = {
   ],
 };
 
+/** Final corridor waypoint for a truck (its trip destination). */
+export function routeDestination(vehicleId: string): Coordinates | null {
+  const waypoints = ROUTES[vehicleId];
+  if (!waypoints || waypoints.length === 0) return null;
+  return waypoints[waypoints.length - 1] as Coordinates;
+}
+
 const TICK_MS = 2000;
 const POINTS_PER_TRIP = 150; //Full trip = approx 5min at 1 point/2s
 const SPEED_KMH = 40;
 const SLOW_KMH = 20; // ML HIGH band: cautious speed instead of a full stop
+const CRAWL_KMH = 10; // ML CRITICAL band: crawl, never a full stop (only real
+// RED incidents stop trucks — FRONTEND_HANDOFF.md §7: "only real RED
+// incidents (15 km radius) can block trucks"). The model predicts CRITICAL
+// for most corridor districts on every scenario date, so a CRITICAL hard
+// stop would freeze the whole fleet permanently on all dates.
 
 // Step 5 stop rule (temporary brains until Aryan returns): on the active
-// scenario date, a truck entering BLOCK_RADIUS_KM of a RED incident stops.
-// HIGH never stops (depot guard: KAM-01 sits ~2 km from the depot).
+// scenario date, a truck entering BLOCK_RADIUS_KM of a RED incident first
+// tries the alternate road (tryDivert — once per date); only when no safe
+// alternate exists does it stop. HIGH never stops (depot guard: KAM-01 sits
+// ~2 km from the depot).
 const BLOCK_RADIUS_KM = 15;
 let activeDate = process.env['SCENARIO_DATE'] ?? '2026-07-28';
 let cachedDate: string | null = null;
@@ -95,10 +108,11 @@ function mlCacheKey(district: string): string {
   return `${district}|${activeDate}|${scenarioOverrides.rainfall_mm ?? ''}|${scenarioOverrides.river_danger_level_count ?? ''}`;
 }
 
-/** Motion decision from an ML band: CRITICAL stops, HIGH crawls, else go. */
-export function mlMotionFor(band: string | null): 'block' | 'slow' | 'go' {
-  if (band === 'CRITICAL') return 'block';
-  if (band === 'HIGH') return 'slow';
+/** Motion decision from an ML band: CRITICAL crawls, HIGH slows, else go.
+ * ML never fully stops a truck — full stops come only from real RED
+ * incidents (see the BLOCK_RADIUS_KM rule in tick()). */
+export function mlMotionFor(band: string | null): 'slow' | 'go' {
+  if (band === 'CRITICAL' || band === 'HIGH') return 'slow';
   return 'go';
 }
 
@@ -137,11 +151,52 @@ export function setScenarioDate(date: string): void {
   cachedDate = null;
   mlCache.clear(); // assessments are per date
   for (const truck of trucks.values()) {
-    if (truck.status === 'blocked') {
+    if (truck.status === 'blocked' || truck.status === 'idle') {
+      // New date replays from current positions (unblocks RED stops and
+      // re-drives completed trips).
       truck.status = 'moving';
       truck.speed = SPEED_KMH;
     }
+    truck.diverted = false;
   }
+  for (const p of progress.values()) {
+    p.done = false;
+    p.diverted = false;
+    p.divertCount = 0;
+    p.lastDivertIdx = -MIN_DIVERT_GAP;
+  }
+}
+
+// Replay helper for POST /api/simulation/start (driver-safe: no date change,
+// RED-blocked trucks stay blocked). Re-drives trucks that already arrived so
+// judges/drivers can watch a full trip again. When vehicleId is given, only
+// that truck replays.
+export function resetCompletedTrips(vehicleId?: string): Truck[] {
+  for (const [id, p] of progress) {
+    if (!p.done) continue;
+    if (vehicleId !== undefined && id !== vehicleId) continue;
+    p.done = false;
+    p.diverted = false;
+    p.divertCount = 0;
+    p.lastDivertIdx = -MIN_DIVERT_GAP;
+    p.idx = 0;
+    const truck = trucks.get(id);
+    if (truck) {
+      // Snap back to the depot immediately so the map + guidance refetch
+      // from the true restart point (no stale destination-position flicker).
+      const start = p.line[0] as Coordinates | undefined;
+      if (start) {
+        truck.lat = start.lat;
+        truck.lng = start.lng;
+      }
+      truck.diverted = false;
+      if (truck.status === 'idle') {
+        truck.status = 'moving';
+        truck.speed = SPEED_KMH;
+      }
+    }
+  }
+  return [...trucks.values()];
 }
 
 let timer: NodeJS.Timeout | null = null;
@@ -212,8 +267,11 @@ export async function fetchRoadLine(waypoints: Coordinates[]): Promise<Coordinat
   return raw.map(([lng, lat]) => ({ lng, lat }));
 }
 
-//Per-truck progress along its road line.
-const progress = new Map<string, { line: Coordinates[]; idx: number }>();
+//Per-truck progress along its road line. done=true parks the truck at its
+//destination until a date switch or POST /api/simulation/start replays it.
+//diverted=true means the line is the alternate road after a RED diversion;
+//divertCount/lastDivertIdx bound chained diversions (see tryDivert).
+const progress = new Map<string, { line: Coordinates[]; idx: number; done: boolean; diverted: boolean; divertCount: number; lastDivertIdx: number }>();
 
 export async function startSimulation(): Promise<void> {
   if (timer) return;
@@ -235,9 +293,10 @@ export async function startSimulation(): Promise<void> {
         POINTS_PER_TRIP
       );
     }
-    progress.set(vehicleId, { line, idx: 0 });
+    progress.set(vehicleId, { line, idx: 0, done: false, diverted: false, divertCount: 0, lastDivertIdx: -MIN_DIVERT_GAP });
     truck.status = 'moving';
     truck.speed = SPEED_KMH;
+    truck.diverted = false;
   }
   timer = setInterval(() => {
     if (ticking) return;
@@ -248,16 +307,124 @@ export async function startSimulation(): Promise<void> {
   }, TICK_MS);
 }
 
+// RED diversion: when a truck is about to enter a RED incident zone, try to
+// move it onto the alternate road (Google → OSRM → contingency) instead of
+// stopping it. The alternate must genuinely bypass the TRIGGERING incident:
+// points within ESCAPE_KM of the truck are the escape segment (exempt), every
+// point beyond that must stay clear of the trigger zone. Downstream REDs get
+// their own divert-or-block decision when reached (chained diversions capped
+// by MAX_DIVERTS with a MIN_DIVERT_GAP spacing so the truck can't ping-pong
+// on one spot and hammer the routing API). When no bypass exists, the truck
+// stops as before. Dynamic import dodges the static cycle (routing.service
+// imports helpers from this module).
+const ESCAPE_KM = 5;
+const MAX_DIVERTS = 3;
+const MIN_DIVERT_GAP = 25;
+// North-bank diversion waypoint (Tezpur, NH-15) — the same detour the RED
+// banner recommends. Used when the routing engine's own alternate still clips
+// the trigger zone: a real OSRM road route far around it.
+const TEZPUR_VIA: Coordinates = { lat: 26.6339, lng: 92.7926 };
+
+/** Pure bypass test (exported for unit tests): escape segment exempt, the
+ * rest of the candidate must stay outside the trigger's block radius. */
+export function alternateClearsTrigger(
+  candidate: Coordinates[],
+  trigger: { lat: number; lng: number },
+  start: Coordinates,
+): boolean {
+  return candidate.every((pt) => {
+    if (haversineKm(pt.lat, pt.lng, start.lat, start.lng) <= ESCAPE_KM) return true;
+    return haversineKm(pt.lat, pt.lng, trigger.lat, trigger.lng) > BLOCK_RADIUS_KM;
+  });
+}
+
+async function tryDivert(
+  vehicleId: string,
+  from: Coordinates,
+  trigger: { id: string; lat: number; lng: number },
+): Promise<{ line: Coordinates[]; label: string } | null> {
+  const dest = routeDestination(vehicleId);
+  if (!dest) return null;
+  const options: Array<{ line: Coordinates[]; label: string }> = [];
+  try {
+    const { getRoute } = await import('./routing.service.js');
+    const route = await getRoute(from, dest);
+    if (route.alternate.length > 1) {
+      options.push({ line: route.alternate, label: route.alternateLabel });
+    }
+  } catch {
+    // Routing engine unreachable — fall through to the Tezpur road below.
+  }
+  try {
+    const tezpurLine = await fetchRoadLine([from, TEZPUR_VIA, dest]);
+    if (tezpurLine.length > 1) {
+      options.push({ line: tezpurLine, label: 'Tezpur & NH-15 north-bank diversion' });
+    }
+  } catch {
+    // OSRM unreachable — nothing to divert onto.
+  }
+  for (const option of options) {
+    if (alternateClearsTrigger(option.line, trigger, from)) {
+      return { line: resample(option.line, POINTS_PER_TRIP), label: option.label };
+    }
+  }
+  return null;
+}
+
 async function tick(): Promise<void> {
   const blocks = await getBlocks();
   for (const [vehicleId, truck] of trucks) {
     if (truck.status === 'blocked') continue; // stays stopped until date change/restart
     const p = progress.get(vehicleId);
-    if (!p) continue;
-    p.idx = (p.idx + 1) % p.line.length; //wrap:demo runs forever
+    if (!p || p.done) continue;
+    if (p.idx >= p.line.length - 1) {
+      // Arrived: park at the destination with status idle (no wrap-around —
+      // at least one truck must visibly reach its destination per trip).
+      // A date switch or POST /api/simulation/start replays the trip.
+      const end = p.line[p.line.length - 1] as Coordinates;
+      truck.lat = end.lat;
+      truck.lng = end.lng;
+      truck.status = 'idle';
+      truck.speed = 0;
+      p.done = true;
+      console.warn(`[sim] ${vehicleId} ARRIVED at destination on ${activeDate}`);
+      emitVehicleUpdate(truck);
+      continue;
+    }
+    p.idx = p.idx + 1; // no wrap: demo runs until arrival, then replays on demand
     const { lng, lat } = p.line[p.idx] as Coordinates;
     const hit = blocks.find((b) => haversineKm(lat, lng, b.lat, b.lng) <= BLOCK_RADIUS_KM);
     if (hit) {
+      // First RED encounter (or a fresh one far down the road): try the
+      // alternate road before stopping. Chained diversions are capped and
+      // spaced so one spot can't trigger an API-hammering ping-pong loop.
+      if (p.divertCount < MAX_DIVERTS && p.idx - p.lastDivertIdx > MIN_DIVERT_GAP) {
+        const detour = await tryDivert(vehicleId, { lat, lng }, hit);
+        if (detour) {
+          p.line = detour.line;
+          p.idx = 0;
+          p.diverted = true;
+          p.divertCount += 1;
+          p.lastDivertIdx = 0;
+          truck.lat = lat;
+          truck.lng = lng;
+          truck.status = 'moving';
+          truck.speed = SLOW_KMH;
+          truck.diverted = true;
+          console.warn(`[sim] ${vehicleId} DIVERTED onto alternate road near ${hit.id} on ${activeDate}`);
+          emitVehicleUpdate(truck);
+          emitDetourAlert({
+            vehicleId,
+            lat,
+            lng,
+            reason: `RED incident ${hit.id} on primary corridor — diverted: ${detour.label}`,
+            incidentId: hit.id,
+            alternateLabel: detour.label,
+            scenarioDate: activeDate,
+          });
+          continue;
+        }
+      }
       truck.lat = lat;
       truck.lng = lng;
       truck.status = 'blocked';
@@ -276,29 +443,15 @@ async function tick(): Promise<void> {
     }
     // ML engine assessment for the truck's current district (cached per
     // district+date+knobs; silent heuristic degradation when sidecar is down).
+    // ML only modulates speed (CRITICAL crawls, HIGH slows) — it never stops
+    // trucks; only real RED incidents above can do that.
     const prevBand = mlState.get(vehicleId)?.band ?? null;
     const ml = await assessTruckMl(vehicleId, lat, lng);
-    if (mlMotionFor(ml.band) === 'block') {
-      truck.lat = lat;
-      truck.lng = lng;
-      truck.status = 'blocked';
-      truck.speed = 0;
-      console.warn(`[sim] ${vehicleId} ML-BLOCKED in ${ml.district} (${ml.band}) on ${activeDate}`);
-      emitVehicleUpdate(truck);
-      emitBlockageAlert({
-        vehicleId,
-        lat,
-        lng,
-        reason: `ML ${ml.band} band in ${ml.district}`,
-        district: ml.district,
-        band: ml.band,
-        scenarioDate: activeDate,
-      });
-      continue;
-    }
     updateTruck(truck, lat, lng);
-    if (mlMotionFor(ml.band) === 'slow') {
-      truck.speed = SLOW_KMH; // cautious crawl through HIGH-band district
+    if (ml.band === 'CRITICAL') {
+      truck.speed = CRAWL_KMH; // crawl through CRITICAL-band district
+    } else if (ml.band === 'HIGH') {
+      truck.speed = SLOW_KMH; // cautious speed through HIGH-band district
     }
     emitVehicleUpdate(truck);
     // Risk alerts only on band transitions (not every 2s tick) to avoid spam.
@@ -358,6 +511,7 @@ export function ingestMockGps(
       }
     }
     p.idx = best;
+    p.done = false;
   }
   return truck;
 }

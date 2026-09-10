@@ -7,20 +7,21 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  alternateClearsTrigger,
   assessTruckMl,
   getMlState,
   getScenarioDate,
   getScenarioOverrides,
   mlMotionFor,
+  routeDestination,
   setScenario,
 } from './simulation.service.js';
 
 describe('mlMotionFor (simulation motion rules)', () => {
-  it('blocks on CRITICAL', () => {
-    assert.equal(mlMotionFor('CRITICAL'), 'block');
-  });
-
-  it('slows on HIGH', () => {
+  // ML never fully stops trucks — only real RED incidents block.
+  // CRITICAL crawls, HIGH slows, everything else goes.
+  it('slows on CRITICAL and HIGH', () => {
+    assert.equal(mlMotionFor('CRITICAL'), 'slow');
     assert.equal(mlMotionFor('HIGH'), 'slow');
   });
 
@@ -29,6 +30,49 @@ describe('mlMotionFor (simulation motion rules)', () => {
     assert.equal(mlMotionFor('MODERATE'), 'go');
     assert.equal(mlMotionFor(null), 'go');
     assert.equal(mlMotionFor('MYSTERY'), 'go');
+  });
+});
+
+describe('alternateClearsTrigger (diversion bypass rule)', () => {
+  const trigger = { lat: 26.5862, lng: 93.3081 }; // ASDMA-01
+  const start = { lat: 26.55, lng: 93.2 };
+
+  it('rejects a detour that clips the edge of the trigger zone', () => {
+    const candidate = [
+      { lat: 26.55, lng: 93.2 }, // escape segment (within 5 km of start)
+      { lat: 26.62, lng: 93.28 }, // ~9 km from trigger — still inside, must fail
+    ];
+    assert.equal(alternateClearsTrigger(candidate, trigger, start), false);
+  });
+
+  it('rejects a candidate that runs through the trigger zone', () => {
+    const candidate = [
+      { lat: 26.55, lng: 93.2 },
+      { lat: 26.5862, lng: 93.3081 }, // dead-centre of the RED zone
+      { lat: 26.6, lng: 93.5 },
+    ];
+    assert.equal(alternateClearsTrigger(candidate, trigger, start), false);
+  });
+
+  it('accepts a genuine bypass far from the trigger', () => {
+    const candidate = [
+      { lat: 26.55, lng: 93.2 },
+      { lat: 26.75, lng: 93.1 }, // ~25 km from trigger
+      { lat: 26.8, lng: 93.5 },
+    ];
+    assert.equal(alternateClearsTrigger(candidate, trigger, start), true);
+  });
+});
+
+describe('routeDestination (diversion target)', () => {
+  it('returns the final corridor waypoint per truck', () => {
+    assert.deepEqual(routeDestination('AS-01-FOOD-04'), { lng: 93.97, lat: 26.51 });
+    assert.deepEqual(routeDestination('AS-02-MED-11'), { lng: 94.63, lat: 27.14 });
+    assert.deepEqual(routeDestination('AS-03-FUEL-07'), { lng: 94.63, lat: 27.14 });
+  });
+
+  it('returns null for unknown vehicles', () => {
+    assert.equal(routeDestination('NOPE-00'), null);
   });
 });
 
@@ -43,7 +87,7 @@ describe('setScenario (what-if controls)', () => {
 });
 
 describe('assessTruckMl (live engine wire)', () => {
-  it('assesses Sivasagar peak as CRITICAL/block and depot as go', async () => {
+  it('assesses Sivasagar peak as CRITICAL/slow and depot as go', async () => {
     setScenario('2026-07-28');
     let sivasagar;
     try {
@@ -54,7 +98,7 @@ describe('assessTruckMl (live engine wire)', () => {
     assert.equal(sivasagar.district, 'Sivasagar');
     assert.equal(sivasagar.source, 'ml');
     assert.equal(sivasagar.band, 'CRITICAL');
-    assert.equal(mlMotionFor(sivasagar.band), 'block');
+    assert.equal(mlMotionFor(sivasagar.band), 'slow');
 
     const depot = await assessTruckMl('AS-01-FOOD-04', 26.1844, 91.7458);
     assert.equal(depot.district, 'Kamrup Metropolitan');

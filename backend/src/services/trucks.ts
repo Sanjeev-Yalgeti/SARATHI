@@ -9,6 +9,7 @@ export interface Truck {
   origin: string;
   destination: string;
   cargoType: string;
+  diverted?: boolean; // true while running the alternate road after a RED diversion
 }
 
 //all trucks will start at guwhati depot(26.1844,91.7458)

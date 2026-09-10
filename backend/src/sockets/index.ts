@@ -99,6 +99,19 @@ export function emitBlockageAlert(detail: {
   emitToTruckRooms(detail.vehicleId, 'alert:blockage', detail);
 }
 
+/** Diversion push: truck left its primary line for the alternate road. */
+export function emitDetourAlert(detail: {
+  vehicleId: string;
+  lat: number;
+  lng: number;
+  reason: string;
+  incidentId?: string;
+  alternateLabel?: string;
+  scenarioDate: string;
+}): void {
+  emitToTruckRooms(detail.vehicleId, 'alert:detour', detail);
+}
+
 export function emitRiskAlert(detail: {
   vehicleId: string;
   district: string;

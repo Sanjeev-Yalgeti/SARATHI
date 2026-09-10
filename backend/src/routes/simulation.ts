@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
-import { getMlState, getScenarioDate, getScenarioOverrides, ingestMockGps, setScenario, setScenarioDate } from '../services/simulation.service.js';
+import { getMlState, getScenarioDate, getScenarioOverrides, ingestMockGps, resetCompletedTrips, setScenario, setScenarioDate, startSimulation } from '../services/simulation.service.js';
 import { trucks } from '../services/trucks.js';
 
 const router = Router();
@@ -39,6 +39,22 @@ router.post('/date', requireAdmin, (req: Request, res: Response) => {
   }
   setScenarioDate(date);
   res.json({ scenarioDate: getScenarioDate(), vehicles: [...trucks.values()] });
+});
+
+// POST /api/simulation/start -> driver-safe start/replay (any authenticated
+// role — this is the button on the driver dashboard). Ensures the tick loop
+// runs and re-drives ARRIVED trucks from the depot. Never changes the
+// scenario date and never unblocks RED-incident stops (admin-only via /date).
+router.post('/start', async (req: Request, res: Response) => {
+  await startSimulation();
+  const scope = req.user?.role === 'ADMIN' ? undefined : req.user?.id;
+  resetCompletedTrips(scope);
+  if (req.user?.role === 'ADMIN') {
+    res.json(statusPayload([...trucks.values()]));
+    return;
+  }
+  const truck = trucks.get(req.user?.id ?? '');
+  res.json(statusPayload(truck ? [truck] : []));
 });
 
 // POST /api/simulation/scenario { date?, rainfall_mm?, river_danger_level_count? }
