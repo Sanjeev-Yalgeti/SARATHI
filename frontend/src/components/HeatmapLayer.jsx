@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import "leaflet.heat";
+import "leaflet.heat/dist/leaflet-heat.js";
 
 /**
  * HeatmapLayer
@@ -15,21 +15,26 @@ import "leaflet.heat";
  * @param {Object} gradient - Heat color gradient mapping (green -> yellow -> orange -> red)
  * @param {number} max - Maximum intensity value (default 1.0)
  */
+const DEFAULT_GRADIENT = {
+  0.2: "#16a34a", // LOW (green)
+  0.4: "#eab308", // MEDIUM (yellow)
+  0.7: "#ea580c", // HIGH (orange)
+  1.0: "#dc2626", // RED (red)
+};
+
 export default function HeatmapLayer({
   points = [],
   radius = 25,
   blur = 20,
   minOpacity = 0.4,
-  gradient = {
-    0.2: "#16a34a", // LOW (green)
-    0.4: "#eab308", // MEDIUM (yellow)
-    0.7: "#ea580c", // HIGH (orange)
-    1.0: "#dc2626", // RED (red)
-  },
+  gradient = DEFAULT_GRADIENT,
   max = 1.0,
 }) {
   const map = useMap();
   const layerRef = useRef(null);
+  // Stabilize inline gradient objects (e.g. from LiveMap.jsx) so the
+  // effect doesn't recreate the heat layer on every render.
+  const gradientKey = JSON.stringify(gradient);
 
   useEffect(() => {
     if (!map) return;
@@ -93,7 +98,9 @@ export default function HeatmapLayer({
         layerRef.current = null;
       }
     };
-  }, [map, points, radius, blur, minOpacity, gradient, max]);
+  // gradientKey stabilizes inline gradient objects to avoid layer recreation
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, points, radius, blur, minOpacity, gradientKey, max]);
 
   return null;
 }
