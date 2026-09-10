@@ -1,10 +1,10 @@
-import { Moon, Sun, LogOut } from "lucide-react";
+import { Moon, Sun, LogOut, Shield, Truck } from "lucide-react";
 import { NAV_ITEMS } from "../constants";
-const LightLogo = '/lightLogo.png'
-const DarkLogo = '/darkLogo.png'
+const LightLogo = '/lightLogo.png';
+const DarkLogo = '/darkLogo.png';
 
-// Restricted role only sees LivePage (Live Map), Reports, and Alerts
-const RESTRICTED_NAV_ITEMS = ["Live Map", "Reports", "Alerts"];
+// Driver role only sees Live Map, Alerts, and Reports
+const DRIVER_NAV_ITEMS = ["Live Map", "Alerts", "Reports"];
 
 export default function TopNav({
     c,
@@ -13,21 +13,19 @@ export default function TopNav({
     theme,
     setTheme,
     isLoggedIn = false,
-    userRole = "admin",
-    setIsLoggedIn,
-    setUserRole
+    userRole = "ADMIN",
+    currentUser = null,
+    onLogout
 }) {
-    // Determine which navigation items to show based on user role
-    const currentNavItems = userRole === "restricted" ? RESTRICTED_NAV_ITEMS : NAV_ITEMS;
+    const isDriver = userRole === "DRIVER" || userRole === "restricted";
+    const currentNavItems = isDriver ? DRIVER_NAV_ITEMS : NAV_ITEMS;
 
     return (
-        <div
-            className="w-full flex items-center justify-between px-6 py-3 bg-transparent pointer-events-auto"
-        >
+        <div className="w-full flex items-center justify-between px-6 py-3 bg-transparent pointer-events-auto">
             <div
                 className="flex justify-center items-center cursor-pointer"
                 onClick={() => {
-                    if (userRole === "restricted") {
+                    if (isDriver) {
                         setActive("Live Map");
                     } else {
                         setActive("Home");
@@ -58,23 +56,36 @@ export default function TopNav({
 
             <div className="flex items-center gap-3">
                 {isLoggedIn && (
-                    <button
-                        onClick={() => {
-                            if (setIsLoggedIn) setIsLoggedIn(false);
-                            if (setUserRole) setUserRole("admin");
-                            setActive("Home");
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs md:text-sm font-semibold border transition-all duration-200 hover:opacity-90 cursor-pointer shadow-sm"
-                        style={{
-                            background: theme === "light" ? "#fee2e2" : "#3b1219",
-                            borderColor: theme === "light" ? "#fca5a5" : "#7f1d1d",
-                            color: theme === "light" ? "#dc2626" : "#f87171"
-                        }}
-                        title="Log out of current session"
-                    >
-                        <LogOut size={16} />
-                        <span className="hidden sm:inline">Logout</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* User profile / role badge */}
+                        <div
+                            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                            style={{
+                                background: isDriver ? (theme === 'light' ? '#dbeafe' : '#1e3a8a33') : (theme === 'light' ? '#dcfce7' : '#064e3b33'),
+                                color: isDriver ? '#2563eb' : '#16a34a',
+                                border: `1px solid ${isDriver ? '#93c5fd' : '#86efac'}`
+                            }}
+                        >
+                            {isDriver ? <Truck size={13} /> : <Shield size={13} />}
+                            <span>{currentUser?.name || currentUser?.id || (isDriver ? "Driver" : "Admin")}</span>
+                            <span className="opacity-75 font-mono text-[10px]">[{userRole}]</span>
+                        </div>
+
+                        {/* Logout Button */}
+                        <button
+                            onClick={onLogout}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs md:text-sm font-semibold border transition-all duration-200 hover:opacity-90 cursor-pointer shadow-sm"
+                            style={{
+                                background: theme === "light" ? "#fee2e2" : "#3b1219",
+                                borderColor: theme === "light" ? "#fca5a5" : "#7f1d1d",
+                                color: theme === "light" ? "#dc2626" : "#f87171"
+                            }}
+                            title="Log out of current session"
+                        >
+                            <LogOut size={16} />
+                            <span className="hidden sm:inline">Logout</span>
+                        </button>
+                    </div>
                 )}
 
                 <button
@@ -94,4 +105,3 @@ export default function TopNav({
         </div>
     );
 }
-

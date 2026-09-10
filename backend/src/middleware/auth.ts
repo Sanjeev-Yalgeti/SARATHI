@@ -40,6 +40,24 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
   }
 }
 
+// Optional auth: attaches req.user if valid token provided, but doesn't block if absent
+export function optionalAuthenticate(req: Request, _res: Response, next: NextFunction): void {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    next();
+    return;
+  }
+  try {
+    const payload = jwt.verify(header.slice(7), getSecret()) as AuthUser;
+    if (payload.role === 'ADMIN' || payload.role === 'DRIVER') {
+      req.user = { id: payload.id, role: payload.role, name: payload.name ?? null };
+    }
+  } catch {
+    // Ignore invalid token for optional endpoints
+  }
+  next();
+}
+
 // 403 if authenticated but not ADMIN. Must be used AFTER authenticate.
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.user?.role !== 'ADMIN') {

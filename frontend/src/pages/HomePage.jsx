@@ -1,6 +1,9 @@
-import { Clock, MapPin, CloudRain, FileText, Database, Brain, Navigation2, Bell, LayoutDashboard, ArrowRight, ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { Clock, MapPin, CloudRain, FileText, Database, Brain, Navigation2, Bell, LayoutDashboard, ArrowRight, ChevronDown, Camera } from "lucide-react";
+import SubmitReportModal from "../components/SubmitReportModal";
 
 export default function HomePage({ c, onGetStarted, setActive }) {
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     /* ── Hero feature list ── */
     const heroItems = [
         { icon: Clock, label: "Real-time monitoring" },
@@ -66,23 +69,33 @@ export default function HomePage({ c, onGetStarted, setActive }) {
                     </div>
                 </div>
 
-                {/* Get Started Button & Scroll hint */}
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4 z-20">
-                    <button
-                        onClick={() => {
-                            if (onGetStarted) onGetStarted();
-                            else if (setActive) setActive("Login");
-                        }}
-                        className="px-8 py-3.5 rounded-full font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2.5 cursor-pointer"
-                        style={{
-                            background: "#ff6200",
-                            color: "#ffffff",
-                            boxShadow: `0 8px 24px ${c.green}50`
-                        }}
-                    >
-                        <span>Get Started</span>
-                        <ArrowRight size={20} />
-                    </button>
+                {/* Get Started Button, Public Incident Reporting & Scroll hint */}
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4 z-20 w-full px-4">
+                    <div className="flex items-center gap-3.5 flex-wrap justify-center">
+                        <button
+                            onClick={() => {
+                                if (onGetStarted) onGetStarted();
+                                else if (setActive) setActive("Login");
+                            }}
+                            className="px-8 py-3.5 rounded-full font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2.5 cursor-pointer text-white"
+                            style={{
+                                background: "#ff6200",
+                                boxShadow: `0 8px 24px #ff620040`
+                            }}
+                        >
+                            <span>Get Started</span>
+                            <ArrowRight size={20} />
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsReportModalOpen(true)}
+                            className="px-7 py-3.5 rounded-full font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2 cursor-pointer bg-white/95 dark:bg-slate-900/95 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 backdrop-blur-md"
+                        >
+                            <Camera size={20} className="text-emerald-600" />
+                            <span>Report Road Incident (Public)</span>
+                        </button>
+                    </div>
 
                     <div className="flex flex-col items-center gap-1 animate-bounce">
                         <span className="text-xs font-semibold tracking-widest uppercase" style={{ color: c.textMuted }}>Scroll</span>
@@ -201,6 +214,17 @@ export default function HomePage({ c, onGetStarted, setActive }) {
                     </div>
                 </div>
             </footer>
+
+            {/* Public Ground-Truth Incident Report Modal (No login required) */}
+            {isReportModalOpen && (
+                <SubmitReportModal
+                    c={c}
+                    onClose={() => setIsReportModalOpen(false)}
+                    onSuccess={() => {
+                        setIsReportModalOpen(false);
+                    }}
+                />
+            )}
         </div>
     );
 }

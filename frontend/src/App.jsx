@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { palette } from "./constants";
 import TopNav from "./components/TopNav";
+import { getStoredToken, getStoredUser, getProfile, logout } from "./api/auth";
 
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
@@ -16,18 +17,72 @@ export default function SarathiApp() {
   const [theme, setTheme] = useState("light");
   const [active, setActive] = useState("Home");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState("admin"); // "admin" | "restricted"
+  const [userRole, setUserRole] = useState(null); // "ADMIN" | "DRIVER"
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Session Hydration on page load / refresh (per FRONTEND_HANDOFF.md §3)
+  useEffect(() => {
+    let isMounted = true;
+    async function hydrateSession() {
+      const token = getStoredToken();
+      const cachedUser = getStoredUser();
+
+      if (!token) {
+        return;
+      }
+
+      // Optimistically set from cached localStorage first for instantaneous UI render
+      if (cachedUser) {
+        setIsLoggedIn(true);
+        setUserRole(cachedUser.role);
+        setCurrentUser(cachedUser);
+      }
+
+      try {
+        // Hydrate and verify with server GET /api/auth/me
+        const user = await getProfile();
+        if (isMounted && user) {
+          setIsLoggedIn(true);
+          setUserRole(user.role);
+          setCurrentUser(user);
+        }
+      } catch {
+        // If token is invalid or expired, clear session
+        if (isMounted) {
+          logout();
+          setIsLoggedIn(false);
+          setUserRole(null);
+          setCurrentUser(null);
+        }
+      }
+    }
+
+    hydrateSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    setIsLoggedIn(false);
+    setUserRole(null);
+    setCurrentUser(null);
+    setActive("Home");
+  };
 
   const c = palette[theme];
 
-  // Restricted users can only access Live Map, Reports, and Alerts
-  const restrictedAllowedPages = ["Live Map", "Reports", "Alerts"];
-  const effectiveActive = (isLoggedIn && userRole === "restricted" && !restrictedAllowedPages.includes(active))
+  // Drivers can only access Live Map, Alerts, and Reports
+  const isDriver = userRole === "DRIVER" || userRole === "restricted";
+  const driverAllowedPages = ["Live Map", "Alerts", "Reports"];
+
+  const effectiveActive = (isLoggedIn && isDriver && !driverAllowedPages.includes(active))
     ? "Live Map"
     : active;
 
   return (
-    <div style={{ background: c.pageBg, minHeight: "100vh", minwidth: "100vw" }} className="font-sans">
+    <div style={{ background: c.pageBg, minHeight: "100vh", minWidth: "100vw" }} className="font-sans">
       {/* Fixed overlay nav — sits above every page */}
       {effectiveActive !== "Login" && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-transparent pointer-events-none">
@@ -38,9 +93,9 @@ export default function SarathiApp() {
             theme={theme}
             setTheme={setTheme}
             isLoggedIn={isLoggedIn}
-            userRole={userRole}
-            setIsLoggedIn={setIsLoggedIn}
-            setUserRole={setUserRole}
+            userRole={userRole || "ADMIN"}
+            currentUser={currentUser}
+            onLogout={handleLogout}
           />
         </div>
       )}
@@ -49,30 +104,34 @@ export default function SarathiApp() {
       <div className={effectiveActive === "Login" ? "" : (isLoggedIn ? "pt-18" : " ")}>
         {effectiveActive === "Login" && (
           <LoginPage
-            c={c}
             setActive={setActive}
             setIsLoggedIn={setIsLoggedIn}
             setUserRole={setUserRole}
+            setCurrentUser={setCurrentUser}
           />
         )}
         {effectiveActive === "Home" && (
-          <HomePage c={c} onGetStarted={() => setActive("Login")} setActive={setActive} />
+          <HomePage
+            c={c}
+            onGetStarted={() => setActive(isLoggedIn ? (isDriver ? "Live Map" : "Trips") : "Login")}
+            setActive={setActive}
+          />
         )}
 
         {effectiveActive === "Live Map" && (
-          <LiveMapPage c={c} />
+          <LiveMapPage c={c} userRole={userRole} currentUser={currentUser} />
         )}
 
         {effectiveActive === "Trips" && (
-          <TripsPage c={c} />
+          <TripsPage c={c} userRole={userRole} currentUser={currentUser} />
         )}
 
         {effectiveActive === "Alerts" && (
-          <AlertsPage c={c} />
+          <AlertsPage c={c} userRole={userRole} currentUser={currentUser} />
         )}
 
         {effectiveActive === "Reports" && (
-          <ReportsPage c={c} />
+          <ReportsPage c={c} userRole={userRole} currentUser={currentUser} />
         )}
 
         {effectiveActive === "Analytics" && (
