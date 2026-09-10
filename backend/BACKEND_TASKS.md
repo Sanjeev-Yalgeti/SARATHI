@@ -54,7 +54,7 @@ Decided integrations (locked):
 - [ ] 2.2 `routing.service.ts`: Google Maps Routes API primary — `TRAFFIC_AWARE` + `departureTime: now` for main road + alternate + congestion level + ETA. Fallback OSRM `router.project-osrm.org/...?alternatives=true` when Google has no data (remote NER) or quota over. Return `{ primary, alternate, distance_km, duration_min, traffic_level, blocked }`.
 - [ ] 2.3 `risk.service.ts` (calls Dhruv's ML first): POST `ML_URL/predict` with `{ lat, lng, eventDate, slope_gradient, forestation_level, rainfall_24h, rainfall_3d, elevation, lithology, dist_to_river, road_cut, susceptibility }`. Output `{ landslide_prob 0-1, score 0-100, level: LOW/MEDIUM/HIGH/RED, reasons[] }`. Heuristic fallback `0.5*rain + 0.3*road + 0.2*flood_zone` only if ML down. Keep `predictRisk(features)` signature stable. Write result to `RiskCache`.
 - [ ] 2.4 Blockage rule: if `landslide_prob ≥ 0.7` or score ≥ 75 OR `prisma.incident.findMany({ where: { eventDate } })` nearby OR Google reports road closed/heavy congestion → `blocked=true`, force alternate.
-- [ ] Done when: `POST /api/route/analyze` for Guwahati→Sivasagar on `2026-07-28` returns HIGH/RED + alternate; on `2026-07-19` returns MEDIUM, no block.
+- [ ] Done when: `POST /api/route/analyze` for Guwahati→Sivasagar on `2026-07-28` returns HIGH/RED + alternate with `blocked=true`. Blockage always follows rule 2.4 (score ≥ 75 or `landslide_prob ≥ 0.7` → `blocked=true`): if any date (including `2026-07-19`) scores RED, it returns `blocked=true` with an alternate — never force MEDIUM/no-block for a date.
 
 ## TRACK 3 — Simulation + Socket.io + Incidents (Person A)
 
@@ -98,4 +98,4 @@ Decided integrations (locked):
 
 ## Out of scope for prototype
 
-Auth/JWT, MongoDB/mongoose, PostGIS spatial SQL (deferred — switch Prisma `provider` to `postgresql` post-demo), Firestore, multilingual, offline PWA. ML stays in scope via Dhruv's `ml-service/`.
+MongoDB/mongoose, PostGIS spatial SQL (deferred — switch Prisma `provider` to `postgresql` post-demo), Firestore, multilingual, offline PWA. Auth/JWT is IN scope and implemented per `PROJECT.md` §6.4/§8.1 (login + `GET /me`, RBAC on all data routes). ML stays in scope via Dhruv's `ml-service/`.
