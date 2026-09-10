@@ -719,6 +719,21 @@ The system supports two roles: **Admin** and **Truck Driver**.
 -   JWT stored in HttpOnly cookies for improved security.
 -   Per-driver individualised passwords and self-service password reset.
 -   Mobile application support.
+-   Socket.io true real-time pushes (`vehicle:update`, `alert:risk`,
+    `alert:blockage`); dashboard currently polls every 2s.
+-   Google map tiles upgrade (dashboard currently uses free
+    OpenStreetMap tiles, no key required).
+-   Merge TEST_CASES-subset geocoded roads into the seed via
+    `npm run geocode:incidents` staging review (Google-only,
+    skip-if-missing, incidents.json stays real-data-only).
+-   Source bulletin district/population/toll figures from the 08--09 Aug
+    PDFs instead of stub constants.
+-   Remove or wire dead routes (`alerts.js`, `maps.js`, `geocode.js`,
+    `trip-planner.js`) currently unmounted in `src/app.ts`.
+-   Implement `POST /api/simulation/location` mock-GPS ingest (PROJECT
+    §9) alongside the internal simulation clock.
+-   Require JWT on `GET /api/weather` and `GET /api/risk` per FR-19
+    (currently public for dashboard fallback).
 
 ------------------------------------------------------------------------
 

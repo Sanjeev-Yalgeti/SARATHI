@@ -1,7 +1,6 @@
 // Prisma schema — SARATHI prototype (SQLite file DB, PostGIS-ready).
-// Keep 3 models only. No PostGIS types yet. All fields use portable
-// types so `provider` can switch to `postgresql` later without touching routes.
-// See BACKEND_TASKS.md "Prisma contract" + naman_alone.md step 0.
+// Portable types so `provider` can switch to `postgresql` later without touching routes.
+// See BACKEND_TASKS.md "Prisma contract" + naman_alone.md step 0 + PROJECT.md §6.9.
 
 generator client {
   provider = "prisma-client"
@@ -64,4 +63,31 @@ model RiskCache {
 
   @@unique([lat, lng, eventDate])
   @@index([eventDate])
+}
+
+// Auth account. id = userId ("admin" or vehicleId e.g. "AS-01-FOOD-04").
+// Driver ids must match keys in src/services/trucks.ts.
+model User {
+  id        String   @id // userId / vehicleId
+  role      String // ADMIN | DRIVER
+  password  String // bcrypt hash, never plaintext
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  trips     Trip[]
+}
+
+// Trip assignment (Admin assigns to driver). See PROJECT.md §6.9 / §8.3.
+model Trip {
+  id          String   @id @default(cuid())
+  driverId    String // FK -> User.id (vehicleId)
+  driver      User     @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  origin      String
+  destination String
+  cargoType   String?
+  status      String   @default("assigned") // assigned | in_progress | completed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([driverId])
 }

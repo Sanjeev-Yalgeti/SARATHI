@@ -1,12 +1,16 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../services/db.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { DRIVER_RADIUS_KM, districtMatchesTrip, haversineKm, latestTrip, ownTruck } from '../utils/scope.js';
 
 const router = Router();
+router.use(authenticate);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// GET /api/incidents?date=2026-07-28 → seed rows + manual blocks for that date.
-// Peak day returns blocks; other dates return [] (passable). No date → all rows.
+// GET /api/incidents?date=2026-07-28 → admin: all rows for the date;
+// driver: only rows on their latest assigned trip (district match)
+// or near their truck (en-route safety net).
 router.get('/', async (req: Request, res: Response) => {
   const date = typeof req.query['date'] === 'string' ? req.query['date'] : undefined;
   if (date !== undefined && !DATE_RE.test(date)) {
@@ -17,12 +21,30 @@ router.get('/', async (req: Request, res: Response) => {
     where: date ? { eventDate: date } : undefined,
     orderBy: { id: 'asc' },
   });
-  res.json({ incidents });
+  if (req.user?.role !== 'DRIVER') {
+    res.json({ incidents });
+    return;
+  }
+  const truck = ownTruck(req);
+  if (!truck || !req.user) {
+    res.json({ incidents: [] });
+    return;
+  }
+  const trip = await latestTrip(req.user.id);
+  res.json({
+    incidents: incidents.filter(
+      (i) =>
+        (trip !== null && districtMatchesTrip(i.district, trip.origin, trip.destination)) ||
+        haversineKm(truck.lat, truck.lng, i.lat, i.lng) <= DRIVER_RADIUS_KM,
+    ),
+  });
 });
 
-// POST /api/incidents → manual blockage (judge demo button). Persisted via
-// Prisma, so it survives restart. No NER bbox check yet (Aryan adds it later).
-router.post('/', async (req: Request, res: Response) => {
+// POST /api/incidents → manual blockage (judge demo button, admin-only).
+// Persisted via Prisma, so it survives restart.
+// Drivers file blockages via POST /api/reports (photo proof, Aryan validates
+// NER bbox later); admin promotes to incidents.
+router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const { id, lat, lng, type, severity, eventDate, road, district, note, status } =
     req.body as Record<string, unknown>;
   if (typeof lat !== 'number' || typeof lng !== 'number') {

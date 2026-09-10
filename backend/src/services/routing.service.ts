@@ -1,8 +1,4 @@
-// Routing stub (Step 6, Naman interim) — Aryan replaces this file's insides
-// with Google Routes API (TRAFFIC_AWARE + departureTime) + OSRM fallback.
-// Contract: same road twice — primary + alternate labelled "via Bongaigaon
-// village roads". Shape matches BACKEND_TASKS §2.2 so the swap is drop-in;
-// Dhruv's model later decides which of the two is safer.
+import axios from 'axios';
 import { fetchRoadLine, haversineKm, type Coordinates } from './simulation.service.js';
 
 export interface RouteResult {
@@ -11,45 +7,93 @@ export interface RouteResult {
   alternateLabel: string;
   distance_km: number;
   duration_min: number;
-  traffic_level: string;
+  traffic_level: 'low' | 'moderate' | 'heavy' | 'unknown';
   blocked: boolean;
-  stub: boolean;
+  source: 'google' | 'osrm' | 'fallback';
 }
 
-const ALT_LABEL = 'via Bongaigaon village roads';
-// Nudge so the map draws two visible lines instead of one on top of the other.
-const ALT_NUDGE = 0.008;
-const SPEED_KMH = 40;
+type GoogleRoute = { polyline?: { encodedPolyline?: string }; distanceMeters?: number; duration?: string; staticDuration?: string };
 
-function pathLengthKm(line: Coordinates[]): number {
-  let total = 0;
-  for (let i = 0; i < line.length - 1; i++) {
-    const p1 = line[i] as Coordinates;
-    const p2 = line[i + 1] as Coordinates;
-    total += haversineKm(p1.lat, p1.lng, p2.lat, p2.lng);
+function decodePolyline(encoded: string): Coordinates[] {
+  const points: Coordinates[] = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let result = 1, shift = 0, byte: number;
+    do { byte = encoded.charCodeAt(index++) - 64; result += byte << shift; shift += 5; } while (byte >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+    result = 1; shift = 0;
+    do { byte = encoded.charCodeAt(index++) - 64; result += byte << shift; shift += 5; } while (byte >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+    points.push({ lat: lat * 1e-5, lng: lng * 1e-5 });
   }
-  return total;
+  return points;
+}
+function seconds(duration?: string): number { return Number(/([\d.]+)s/.exec(duration ?? '')?.[1] ?? 0); }
+function metrics(line: Coordinates[]): { km: number; min: number } {
+  let km = 0;
+  for (let i = 1; i < line.length; i++) km += haversineKm(line[i - 1]!.lat, line[i - 1]!.lng, line[i]!.lat, line[i]!.lng);
+  return { km: Math.round(km * 10) / 10, min: Math.max(1, Math.round((km / 38) * 60)) };
+}
+function traffic(duration: number, staticDuration: number): RouteResult['traffic_level'] {
+  if (!staticDuration) return 'unknown'; const ratio = duration / staticDuration;
+  return ratio >= 1.5 ? 'heavy' : ratio >= 1.2 ? 'moderate' : 'low';
+}
+
+function hasMeaningfulDetour(primary: Coordinates[], candidate: Coordinates[]): boolean {
+  return candidate.some((point) =>
+    primary.every((mainRoadPoint) => haversineKm(point.lat, point.lng, mainRoadPoint.lat, mainRoadPoint.lng) > 1)
+  );
+}
+
+function contingencyWaypoint(from: Coordinates, to: Coordinates): Coordinates {
+  const midLat = (from.lat + to.lat) / 2;
+  const midLng = (from.lng + to.lng) / 2;
+  const distance = Math.hypot(to.lat - from.lat, to.lng - from.lng);
+  const offset = Math.min(0.22, Math.max(0.06, distance * 0.14));
+  return { lat: midLat + ((to.lng - from.lng) / distance) * offset, lng: midLng - ((to.lat - from.lat) / distance) * offset };
+}
+
+async function osrmContingencyDetour(from: Coordinates, to: Coordinates, primary: Coordinates[]): Promise<Coordinates[] | null> {
+  const base = process.env['OSRM_BASE_URL'] ?? 'https://router.project-osrm.org';
+  const via = contingencyWaypoint(from, to);
+  const { data } = await axios.get(`${base}/route/v1/driving/${from.lng},${from.lat};${via.lng},${via.lat};${to.lng},${to.lat}`, { params: { overview: 'full', geometries: 'geojson' }, timeout: 8000 });
+  const raw = data?.routes?.[0]?.geometry?.coordinates as Array<[number, number]> | undefined;
+  const detour = raw?.map(([lng, lat]) => ({ lat, lng })) ?? [];
+  return detour.length > 1 && hasMeaningfulDetour(primary, detour) ? detour : null;
+}
+
+async function googleRoutes(from: Coordinates, to: Coordinates): Promise<RouteResult> {
+  const key = process.env['GOOGLE_MAPS_API_KEY'];
+  if (!key || key.includes('your_')) throw new Error('Google Routes key is not configured');
+  const { data } = await axios.post<{ routes?: GoogleRoute[] }>('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } }, destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
+    travelMode: 'DRIVE', routingPreference: 'TRAFFIC_AWARE', departureTime: new Date().toISOString(), computeAlternativeRoutes: true,
+  }, { headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'routes.duration,routes.staticDuration,routes.distanceMeters,routes.polyline.encodedPolyline' }, timeout: 8000 });
+  const routes = data.routes ?? [], first = routes[0];
+  if (!first?.polyline?.encodedPolyline) throw new Error('Google Routes returned no route');
+  const primary = decodePolyline(first.polyline.encodedPolyline), second = routes[1];
+  const googleAlternate = second?.polyline?.encodedPolyline ? decodePolyline(second.polyline.encodedPolyline) : null;
+  const alternate = googleAlternate ?? await osrmContingencyDetour(from, to, primary).catch(() => null) ?? primary;
+  const durationSeconds = seconds(first.duration);
+  return { primary, alternate, alternateLabel: second ? 'Google alternate route' : alternate !== primary ? 'OSRM secondary-road contingency detour' : 'Main route (no safe alternate returned)', distance_km: Math.round((first.distanceMeters ?? metrics(primary).km * 1000) / 100) / 10, duration_min: Math.max(1, Math.round(durationSeconds / 60) || metrics(primary).min), traffic_level: traffic(durationSeconds, seconds(first.staticDuration)), blocked: false, source: 'google' };
+}
+
+async function osrmRoutes(from: Coordinates, to: Coordinates): Promise<RouteResult> {
+  const base = process.env['OSRM_BASE_URL'] ?? 'https://router.project-osrm.org';
+  const { data } = await axios.get(`${base}/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}`, { params: { alternatives: 'true', overview: 'full', geometries: 'geojson' }, timeout: 8000 });
+  const routes = data?.routes as Array<{ geometry?: { coordinates?: Array<[number, number]> }; distance?: number; duration?: number }> | undefined;
+  if (!routes?.[0]?.geometry?.coordinates) throw new Error('OSRM returned no route');
+  const toLine = (route: (typeof routes)[number]): Coordinates[] => route.geometry!.coordinates!.map(([lng, lat]) => ({ lat, lng }));
+  const primary = toLine(routes[0]);
+  const osrmAlternate = routes[1]?.geometry?.coordinates ? toLine(routes[1]) : null;
+  const alternate = osrmAlternate && hasMeaningfulDetour(primary, osrmAlternate) ? osrmAlternate : await osrmContingencyDetour(from, to, primary).catch(() => null) ?? primary;
+  return { primary, alternate, alternateLabel: osrmAlternate ? 'OSRM alternate road' : alternate !== primary ? 'OSRM secondary-road contingency detour' : 'Main route (no safe alternate returned)', distance_km: Math.round((routes[0].distance ?? metrics(primary).km * 1000) / 100) / 10, duration_min: Math.max(1, Math.round((routes[0].duration ?? metrics(primary).min * 60) / 60)), traffic_level: 'unknown', blocked: false, source: 'osrm' };
 }
 
 export async function getRoute(from: Coordinates, to: Coordinates): Promise<RouteResult> {
-  let primary: Coordinates[];
-  try {
-    primary = await fetchRoadLine([from, to]);
-  } catch (err) {
-    console.warn('[routes] OSRM failed, using straight line:', (err as Error).message);
-    primary = [from, to];
+  try { return await googleRoutes(from, to); } catch { /* Missing key, quota, or remote road: OSRM. */ }
+  try { return await osrmRoutes(from, to); } catch {
+    try { const primary = await fetchRoadLine([from, to]); const m = metrics(primary); return { primary, alternate: primary, alternateLabel: 'Fallback road estimate', distance_km: m.km, duration_min: m.min, traffic_level: 'unknown', blocked: false, source: 'fallback' }; }
+    catch { const primary = [from, to]; const m = metrics(primary); return { primary, alternate: primary, alternateLabel: 'Direct-line fallback', distance_km: m.km, duration_min: m.min, traffic_level: 'unknown', blocked: false, source: 'fallback' }; }
   }
-  // Stub alternate: same road, nudged north so both lines are visible.
-  const alternate = primary.map((p) => ({ lng: p.lng, lat: p.lat + ALT_NUDGE }));
-  const distance_km = Math.round(pathLengthKm(primary) * 10) / 10;
-  return {
-    primary,
-    alternate,
-    alternateLabel: ALT_LABEL,
-    distance_km,
-    duration_min: Math.round((distance_km / SPEED_KMH) * 60),
-    traffic_level: 'unknown',
-    blocked: false,
-    stub: true,
-  };
 }
