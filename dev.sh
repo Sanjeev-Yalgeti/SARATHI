@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # SARATHI daily runner — starts backend + ML sidecar + frontend with one line.
-# Usage:  ./dev.sh
+# Usage:  ./dev.sh [--force]
+#   --force  auto-kill anything already holding ports 5001/8000/5173
+#            (stale servers from earlier runs) instead of refusing to start.
 # Ctrl-C stops all three. Run ./setup.sh first (once per laptop).
 set -euo pipefail
+
+FORCE=0
+for arg in "$@"; do
+  case "$arg" in
+    --force|-f) FORCE=1 ;;
+    *) echo "unknown flag: $arg (only --force is supported)"; exit 1 ;;
+  esac
+done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIDS=()
@@ -26,13 +36,36 @@ port_busy() {
   fi
 }
 
+kill_port() {
+  local port="$1" pid
+  for pid in $(lsof -ti ":$port" 2>/dev/null); do
+    # Never kill ourselves or our own process group.
+    if [ "$pid" != "$$" ]; then kill "$pid" 2>/dev/null || true; fi
+  done
+  sleep 2
+  for pid in $(lsof -ti ":$port" 2>/dev/null); do
+    if [ "$pid" != "$$" ]; then kill -9 "$pid" 2>/dev/null || true; fi
+  done
+  sleep 1
+}
+
 # ── pre-flight ───────────────────────────────────────────────────
 [ -f "$ROOT/backend/.env" ] || { echo "missing backend/.env — run ./setup.sh first"; exit 1; }
 for port in 5001 8000 5173; do
   if port_busy "$port"; then
-    echo "port $port is already in use. Kill the stale process first:"
-    echo "  lsof -i :$port   # then:  kill <PID>"
-    exit 1
+    if [ "$FORCE" = "1" ]; then
+      echo "-- port $port busy: killing stale holder (--force)"
+      kill_port "$port"
+      if port_busy "$port"; then
+        echo "  [!!] could not free port $port — kill it manually: lsof -i :$port"
+        exit 1
+      fi
+      echo "  [ok] port $port freed"
+    else
+      echo "port $port is already in use. Either stop it, or rerun with:"
+      echo "  ./dev.sh --force   # auto-kill stale holders on 5001/8000/5173"
+      exit 1
+    fi
   fi
 done
 
