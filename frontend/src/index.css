@@ -5,6 +5,11 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* One typeface on the map — Leaflet defaults to its own stack */
+.leaflet-container {
+  font-family: 'Inter', sans-serif;
+}
+
 /* Always-on truck ID labels (Leaflet permanent tooltips) */
 .leaflet-tooltip.truck-label {
   background: #0f2a4a;

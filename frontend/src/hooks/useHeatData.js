@@ -69,6 +69,7 @@ export function useHeatData({
   token = null,
   apiUrl = null,
   mode = "all", // "incidents" | "all"
+  enabled = true, // false = drive mode: no grid sampling, no requests
 }) {
   const base =
     apiUrl ?? import.meta.env.VITE_API_URL ?? "http://localhost:5001";
@@ -96,6 +97,22 @@ export function useHeatData({
 
   const loadDataForDate = useCallback(
     async (targetDate, abortSignal) => {
+      // Drive mode: render nothing and fire no requests.
+      if (!enabled) {
+        setIncidentPoints([]);
+        setRiskPoints([]);
+        setMergedPoints([]);
+        setMetadata({
+          source: "heuristic",
+          baseDate: null,
+          totalIncidents: 0,
+          totalGridCells: 0,
+          hasML: false,
+        });
+        setIsLoading(false);
+        setIsGridLoading(false);
+        return;
+      }
       const cacheKey = `${targetDate}_${jwt ? jwt.slice(-10) : "anon"}`;
 
       // Check cache first
@@ -228,12 +245,13 @@ export function useHeatData({
       setMetadata(newMeta);
       setIsGridLoading(false);
     },
-    [base, headers, jwt]
+    [base, headers, jwt, enabled]
   );
 
   // Fetch once per date change — NEVER per-frame or in poll loop
   useEffect(() => {
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- date-driven heat load (cache/network-backed, not derived render state)
     loadDataForDate(date, controller.signal);
 
     return () => {

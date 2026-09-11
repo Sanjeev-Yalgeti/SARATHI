@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo, Fragment } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback, Fragment } from "react";
 import L from "leaflet";
 import {
   CircleMarker,
@@ -21,6 +21,7 @@ import {
   Flame,
   Route as RouteIcon,
   Crosshair,
+  Expand,
 } from "lucide-react";
 import HeatmapLayer from "./HeatmapLayer";
 import { useHeatData } from "../hooks/useHeatData";
@@ -101,6 +102,61 @@ function FlyToTracked({ target }) {
   return null;
 }
 
+// Continuous follow: pans to the truck every poll while active. Any manual
+// drag pauses via onUserDrag (pill flips to Resume) — Google-style follow.
+function FollowTracked({ truck, active, onUserDrag }) {
+  const map = useMap();
+  const dragRef = useRef(null);
+  useEffect(() => {
+    dragRef.current = onUserDrag;
+  }, [onUserDrag]);
+  useEffect(() => {
+    const pause = () => dragRef.current?.();
+    map.on("dragstart", pause);
+    return () => {
+      map.off("dragstart", pause);
+    };
+  }, [map]);
+  const lat = truck?.lat;
+  const lng = truck?.lng;
+  useEffect(() => {
+    if (active && lat != null && lng != null) {
+      map.panTo([lat, lng], { animate: true });
+    }
+  }, [map, active, lat, lng]);
+  return null;
+}
+
+// Fit-all-routes button (bottom-left, Google-style target control).
+function FitRouteControl({ routes, trucks }) {
+  const map = useMap();
+  const flat = useMemo(() => {
+    const pts = [];
+    for (const r of routes ?? []) {
+      for (const line of [r.primary, r.alternate]) {
+        if (Array.isArray(line)) {
+          for (const pt of line) pts.push(pt);
+        }
+      }
+    }
+    for (const t of trucks ?? []) {
+      if (Number.isFinite(t.lat) && Number.isFinite(t.lng)) pts.push([t.lat, t.lng]);
+    }
+    return pts;
+  }, [routes, trucks]);
+  if (flat.length < 2) return null;
+  return (
+    <button
+      type="button"
+      title="Fit routes on screen"
+      onClick={() => map.flyToBounds(L.latLngBounds(flat).pad(0.15), { duration: 1 })}
+      className="absolute bottom-4 left-4 z-[400] w-9 h-9 rounded-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 shadow-lg flex items-center justify-center text-gray-700 dark:text-gray-200 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+    >
+      <Expand size={16} />
+    </button>
+  );
+}
+
 // Google-style source (A, green) / destination (B, red) pins.
 function endPinIcon(letter) {
   return L.divIcon({
@@ -141,6 +197,31 @@ export default function LiveMap({
   const base =
     apiUrl ?? import.meta.env.VITE_API_URL ?? "http://localhost:5001";
   const jwt = token ?? localStorage.getItem("sarathi_token") ?? "";
+  const isDriverRole = userRole === "DRIVER" || userRole === "restricted";
+
+  // Drive mode = Google-clean guidance (route + truck + destination only).
+  // Analyze mode = full analyst chrome (heatmap, all severities, legend).
+  // Drivers are always in drive mode; admins persist their last choice.
+  const [mode, setMode] = useState(() => {
+    if (isDriverRole) return "drive";
+    try {
+      const saved = localStorage.getItem("sarathi_map_mode");
+      if (saved === "analyze" || saved === "drive") return saved;
+    } catch {
+      /* private mode — default below */
+    }
+    return "drive";
+  });
+  useEffect(() => {
+    if (isDriverRole) return;
+    try {
+      localStorage.setItem("sarathi_map_mode", mode);
+    } catch {
+      /* ignore */
+    }
+  }, [mode, isDriverRole]);
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState(date);
   const [vehicles, setVehicles] = useState([]);
@@ -158,12 +239,13 @@ export default function LiveMap({
   const [heatMode, setHeatMode] = useState(initialHeatMode);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
 
-  // Risk Heatmap data hook: fetches incidents + coarse risk grid over corridor bbox
+  // Risk Heatmap data hook: analyze mode only (drive mode fires no requests).
   const heatData = useHeatData({
     date: selectedDate,
     token: jwt,
     apiUrl: base,
     mode: heatMode,
+    enabled: mode === "analyze",
   });
 
   const isMountedRef = useRef(true);
@@ -307,7 +389,7 @@ export default function LiveMap({
   }, [base, headers, selectedDate, onDateChange]);
 
   // Role scoping: Driver only sees their assigned vehicle
-  const isDriver = userRole === "DRIVER" || userRole === "restricted";
+  const isDriver = isDriverRole;
   const driverVehicleId = currentUser?.id;
 
   const displayVehicles = useMemo(() => {
@@ -319,9 +401,16 @@ export default function LiveMap({
     return vehicles;
   }, [vehicles, showVehicles, isDriver, driverVehicleId]);
 
-  const displayIncidents = showIncidents ? incidents : [];
+  const displayIncidents = !showIncidents
+    ? []
+    : mode === "drive"
+      // Drive mode: only route-relevant severities, no pin soup.
+      ? incidents.filter((i) => i.severity === "RED" || i.severity === "HIGH")
+      : incidents;
   // Drivers always see the risk banner (safety-critical); only admins toggle it.
   const displayBanner = showBanner || isDriver ? analysis : null;
+  // Heat renders only in analyze mode (drive mode stays Google-clean).
+  const showHeat = mode === "analyze" && showHeatmap;
 
   // A→B route lines: one unique origin→destination pair per visible truck
   // (drivers see only their own truck → only their own route).
@@ -470,6 +559,8 @@ export default function LiveMap({
   // Click-to-track (admin portal): click a truck to isolate its live path.
   // Everything else dims so the tracked corridor is the only thing on screen.
   const [trackedId, setTrackedId] = useState(null);
+  const [following, setFollowing] = useState(false);
+  const stopUserDrag = useCallback(() => setFollowing(false), []);
   const trackedTruck = trackedId
     ? displayVehicles.find((v) => v.vehicleId === trackedId) ?? null
     : null;
@@ -499,16 +590,19 @@ export default function LiveMap({
     [trackedId]
   );
 
-  // Tile layer URL based on current theme
+  // Tile layers: Carto Voyager family in both themes (cleaner than OSM
+  // Standard, no key needed) — one visual language like Google Maps.
   const tileUrl =
     theme === "dark"
       ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+      : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  const tileAttribution =
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
   return (
     <div className="flex flex-col gap-3 font-sans w-full">
       {/* Top Map Control Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-gray-200 dark:border-slate-800 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-gray-200 dark:border-slate-800 shadow-sm relative">
         {/* Scenario Date Switcher */}
         <div className="flex items-center gap-2 text-xs sm:text-sm">
           <Calendar size={16} className="text-[#0a8754] shrink-0" />
@@ -537,13 +631,59 @@ export default function LiveMap({
           </div>
         </div>
 
+        {/* Drive / Analyze mode (admins only — drivers are always drive) */}
+        {!isDriver && (
+          <div
+            className="flex items-center bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg"
+            role="tablist"
+            aria-label="Map mode"
+          >
+            {[
+              { key: "drive", label: "Drive" },
+              { key: "analyze", label: "Analyze" },
+            ].map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                role="tab"
+                aria-selected={mode === m.key}
+                onClick={() => setMode(m.key)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                  mode === m.key
+                    ? "bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm"
+                    : "text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* View Layer Toggles & Live Status Indicator */}
         <div className="flex items-center gap-2.5 flex-wrap text-xs">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setLayersOpen((o) => !o)}
+              aria-expanded={layersOpen}
+              className={`flex w-full items-center justify-start gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+                layersOpen
+                  ? "bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 dark:border-white"
+                  : "bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 border-transparent"
+              }`}
+              title="Map layers"
+            >
+              <Layers size={13} />
+              <span>Layers</span>
+            </button>
+            {layersOpen && (
+            <div className="absolute right-0 top-full mt-2 z-[500] w-60 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-xl flex flex-col items-stretch gap-1.5">
           {/* Incidents Toggle */}
           <button
             type="button"
             onClick={() => setShowIncidents(!showIncidents)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+            className={`flex w-full items-center justify-start gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
               showIncidents
                 ? "bg-red-50 dark:bg-red-950/30 text-red-600 border-red-200 dark:border-red-900"
                 : "bg-gray-100 dark:bg-slate-800 text-gray-500 border-transparent"
@@ -557,7 +697,7 @@ export default function LiveMap({
           <button
             type="button"
             onClick={() => setShowVehicles(!showVehicles)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+            className={`flex w-full items-center justify-start gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
               showVehicles
                 ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 border-emerald-200 dark:border-emerald-900"
                 : "bg-gray-100 dark:bg-slate-800 text-gray-500 border-transparent"
@@ -571,7 +711,7 @@ export default function LiveMap({
           <button
             type="button"
             onClick={() => setShowRoutes(!showRoutes)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+            className={`flex w-full items-center justify-start gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
               showRoutes
                 ? "bg-sky-50 dark:bg-sky-950/30 text-sky-700 border-sky-200 dark:border-sky-900"
                 : "bg-gray-100 dark:bg-slate-800 text-gray-500 border-transparent"
@@ -586,7 +726,7 @@ export default function LiveMap({
           <button
             type="button"
             onClick={() => setShowBanner(!showBanner)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+            className={`flex w-full items-center justify-start gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
               showBanner
                 ? "bg-amber-50 dark:bg-amber-950/30 text-amber-700 border-amber-200 dark:border-amber-900"
                 : "bg-gray-100 dark:bg-slate-800 text-gray-500 border-transparent"
@@ -603,7 +743,7 @@ export default function LiveMap({
           <button
             type="button"
             onClick={() => setShowHeatmap(!showHeatmap)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
+            className={`flex w-full items-center justify-start gap-1.5 px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-colors ${
               showHeatmap
                 ? "bg-orange-50 dark:bg-orange-950/30 text-orange-600 border-orange-200 dark:border-orange-900 shadow-xs"
                 : "bg-gray-100 dark:bg-slate-800 text-gray-500 border-transparent"
@@ -651,6 +791,9 @@ export default function LiveMap({
           )}
           </>
           )}
+            </div>
+          )}
+          </div>
 
           {/* Live Polling Badge */}
           <div
@@ -671,26 +814,17 @@ export default function LiveMap({
 
       {/* Corridor Risk Alert Banner (POST /api/route/analyze) */}
       {displayBanner?.blocked && (
-        <div className="flex items-start gap-3 p-3.5 rounded-xl border border-red-200 bg-red-50 text-red-900 shadow-sm animate-fadeIn">
-          <div className="p-1.5 rounded-lg bg-red-600 text-white shrink-0 mt-0.5">
-            <ShieldAlert size={18} />
+        <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-900 shadow-sm animate-fadeIn text-xs dark:bg-red-950/40 dark:border-red-900 dark:text-red-200">
+          <div className="p-1 rounded-md bg-red-600 text-white shrink-0">
+            <ShieldAlert size={15} />
           </div>
-          <div className="flex-1 text-sm">
-            <div className="font-extrabold flex items-center gap-2">
-              <span>RED RISK ALERT — CORRIDOR IMPASSABLE</span>
-              <span className="text-xs px-2 py-0.2 rounded-full bg-red-600 text-white font-mono uppercase">
-                {displayBanner.level || "RED"}
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs text-red-800 leading-relaxed">
-              {displayBanner.delayMessage}
-            </p>
+          <p className="flex-1 leading-snug">
+            <span className="font-extrabold">RED RISK ALERT — corridor impassable. </span>
+            <span className="opacity-90">{displayBanner.delayMessage} </span>
             {displayBanner.recommendedRoad && (
-              <p className="mt-1 text-xs font-semibold text-emerald-800 bg-emerald-100/70 px-2.5 py-1 rounded-md inline-block">
-                🧭 Recommendation: {displayBanner.recommendedRoad}
-              </p>
+              <span className="font-semibold">🧭 {displayBanner.recommendedRoad}</span>
             )}
-          </div>
+          </p>
         </div>
       )}
 
@@ -726,29 +860,41 @@ export default function LiveMap({
         </div>
       )}
 
-      {/* Tracking chip — who is isolated on screen right now */}
-      {trackedId && (
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-sky-300 bg-sky-100 text-sky-900 shadow-sm text-xs font-bold dark:bg-sky-950/50 dark:border-sky-800 dark:text-sky-200">
-          <Crosshair size={14} className="animate-pulse" />
-          <span>
-            Tracking {trackedId}
-            {trackedTruck?.diverted ? " • on detour" : ""} — click the truck again or
-          </span>
-          <button
-            type="button"
-            onClick={() => setTrackedId(null)}
-            className="px-2 py-0.5 rounded-md bg-[#1a73e8] text-white cursor-pointer hover:opacity-90"
-          >
-            Show all
-          </button>
-        </div>
-      )}
-
       {/* Leaflet Map Frame */}
       <div
         style={{ height, minHeight: 440 }}
         className="relative w-full rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-800 shadow-lg z-0"
       >
+        {/* Tracking pill — floats on the map, never stacks panels below it */}
+        {trackedId && (
+          <div className="absolute top-3 left-3 z-[400] flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 text-white shadow-lg text-xs font-bold backdrop-blur-sm">
+            <Crosshair size={13} className="animate-pulse text-sky-400" />
+            <span>
+              {trackedId}
+              {trackedTruck?.diverted ? " • detour" : ""}
+            </span>
+            <button
+              type="button"
+              title={following ? "Following — drag the map to pause" : "Follow this truck"}
+              onClick={() => setFollowing((f) => !f)}
+              className={`px-2 py-0.5 rounded-full cursor-pointer ${
+                following ? "bg-sky-500 text-white" : "bg-white/15 hover:bg-white/25"
+              }`}
+            >
+              {following ? "Following" : "Follow"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTrackedId(null);
+                setFollowing(false);
+              }}
+              className="px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 cursor-pointer"
+            >
+              Show all
+            </button>
+          </div>
+        )}
         <MapContainer
           center={[26.45, 93.1]}
           zoom={8}
@@ -756,13 +902,15 @@ export default function LiveMap({
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            attribution={tileAttribution}
             url={tileUrl}
           />
           <FlyToTracked target={flyTarget} />
+          <FollowTracked truck={trackedTruck} active={following && !!trackedTruck} onUserDrag={stopUserDrag} />
+          <FitRouteControl routes={visibleRoutes} trucks={displayVehicles} />
 
-          {/* Risk Heatmap Layer (underneath markers) */}
-          {showHeatmap && (
+          {/* Risk Heatmap Layer (analyze mode only, underneath markers) */}
+          {showHeat && (
             <HeatmapLayer
               points={heatData.points}
               radius={25}
@@ -875,7 +1023,15 @@ export default function LiveMap({
                   weight: isTracked ? 3.5 : 2.5,
                 }}
                 eventHandlers={{
-                  click: () => setTrackedId((t) => (t === v.vehicleId ? null : v.vehicleId)),
+                  click: () => {
+                    if (trackedId === v.vehicleId) {
+                      setTrackedId(null);
+                      setFollowing(false);
+                    } else {
+                      setTrackedId(v.vehicleId);
+                      setFollowing(true);
+                    }
+                  },
                 }}
               >
                 <Tooltip
@@ -980,14 +1136,26 @@ export default function LiveMap({
           })}
         </MapContainer>
 
-        {/* Floating Map Legend Overlay */}
-        <div className="absolute bottom-4 right-4 z-[400] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-gray-200 dark:border-slate-800 shadow-md text-xs pointer-events-auto max-w-[280px]">
+        {/* Map legend — collapsed behind an ⓘ button (Google-style minimal
+            chrome; heat detail lives inside when the heat layer is on) */}
+        <div className="absolute bottom-4 right-4 z-[400] flex flex-col items-end gap-2 pointer-events-none">
+          <button
+            type="button"
+            onClick={() => setLegendOpen((o) => !o)}
+            aria-expanded={legendOpen}
+            title="Map legend"
+            className="pointer-events-auto w-9 h-9 rounded-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-300 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+          >
+            <Info size={16} />
+          </button>
+          {legendOpen && (
+          <div className="pointer-events-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-gray-200 dark:border-slate-800 shadow-md text-xs max-w-[280px]">
           <div className="font-bold mb-2 flex items-center justify-between gap-1 text-gray-800 dark:text-gray-200">
             <div className="flex items-center gap-1">
               <Info size={13} />
               <span>Map Legend</span>
             </div>
-            {showHeatmap && (
+            {showHeat && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 font-semibold">
                 Heat Active
               </span>
@@ -1022,7 +1190,7 @@ export default function LiveMap({
           </div>
 
           {/* Heatmap Risk Gradient Chips & Transparency Info Line */}
-          {showHeatmap && (
+          {showHeat && (
             <div className="mt-2.5 pt-2 border-t border-gray-200 dark:border-slate-800">
               <div className="text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center justify-between">
                 <span>HEATMAP RISK LEVEL</span>
@@ -1073,6 +1241,8 @@ export default function LiveMap({
                 </div>
               </div>
             </div>
+          )}
+          </div>
           )}
         </div>
       </div>
