@@ -526,12 +526,15 @@ recommend alternative routes.
 -   Generate dummy GPS coordinates.
 -   Send mock latitude/longitude values.
 -   Support project demonstrations without real hardware.
--   In-memory tick loop (2 s): OSRM road lines resampled to 150
-    points per trip (~5 min full travel); no wrap-around — arrival
-    parks the truck idle at its destination; date switch or
-    POST /api/simulation/start replays (Start snaps to depot).
--   Mock-GPS ingest (`POST /api/simulation/location`) snaps the
-    internal clock to the nearest line point and resumes.
+-   In-memory tick loop (2 s): OSRM road lines resampled to 1500
+    points per trip (~50 min full travel at 1 pt/2 s — fine-grained
+    GPS for realism); no wrap-around — arrival parks the truck idle
+    at its destination; date switch or POST /api/simulation/start
+    replays (Start snaps to depot).
+-   Mock-GPS ingest (`POST /api/simulation/location`), admin-only,
+    snaps the internal clock to the nearest line point and resumes —
+    this is the demo staging tool: teleport a truck near the
+    decisive stretch (zone edge / camp) and let the tick finish it.
 -   Live remaining road per truck via `getRemainingPath`, exposed at
     GET /api/simulation/path/:vehicleId (driver-scoped).
 
