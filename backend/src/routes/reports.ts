@@ -140,7 +140,12 @@ router.post('/', optionalAuthenticate, upload.single('photo'), async (req: Reque
 // PATCH /api/reports/:id { status: 'approved' | 'rejected' }
 // Admin review & decision endpoint
 router.patch('/:id', authenticate, requireAdmin, async (req: Request, res: Response) => {
-  const id = req.params['id'];
+  const rawId = req.params['id'];
+  const id = typeof rawId === 'string' ? rawId : Array.isArray(rawId) ? rawId[0] : undefined;
+  if (!id) {
+    res.status(400).json({ error: 'Report id is required' });
+    return;
+  }
   const { status } = req.body as Record<string, unknown>;
 
   if (status !== 'approved' && status !== 'rejected') {
@@ -190,7 +195,12 @@ router.patch('/:id', authenticate, requireAdmin, async (req: Request, res: Respo
 
 // DELETE /api/reports/:id — Admin-only
 router.delete('/:id', authenticate, requireAdmin, async (req: Request, res: Response) => {
-  const id = req.params['id'];
+  const rawId = req.params['id'];
+  const id = typeof rawId === 'string' ? rawId : Array.isArray(rawId) ? rawId[0] : undefined;
+  if (!id) {
+    res.status(400).json({ error: 'Report id is required' });
+    return;
+  }
   const existing = await prisma.fieldReport.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ error: 'Report not found' });

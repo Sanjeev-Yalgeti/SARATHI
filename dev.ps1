@@ -1,6 +1,6 @@
 # SARATHI Windows PowerShell daily runner
 # Usage in PowerShell: .\dev.ps1
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $Root = $PSScriptRoot
 
 Write-Host "== Starting SARATHI Services ==" -ForegroundColor Cyan
@@ -59,8 +59,16 @@ Write-Host ""
 
 try {
     while ($true) {
-        Receive-Job $backendJob | ForEach-Object { Write-Host "[api] $_" -ForegroundColor Cyan }
-        Receive-Job $frontendJob | ForEach-Object { Write-Host "[web] $_" -ForegroundColor Green }
+        $apiLogs = Receive-Job $backendJob -ErrorAction SilentlyContinue
+        if ($apiLogs) {
+            $apiLogs | ForEach-Object { Write-Host "[api] $_" -ForegroundColor Cyan }
+        }
+
+        $webLogs = Receive-Job $frontendJob -ErrorAction SilentlyContinue
+        if ($webLogs) {
+            $webLogs | ForEach-Object { Write-Host "[web] $_" -ForegroundColor Green }
+        }
+
         Start-Sleep -Milliseconds 500
     }
 } finally {
