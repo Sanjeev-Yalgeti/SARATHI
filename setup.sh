@@ -32,7 +32,7 @@ echo "-- backend: prisma migrate deploy"
 (cd "$ROOT/backend" && npx prisma migrate deploy)
 ok "database tables ready"
 
-echo "-- backend: db:seed (8 incidents + 4 users + 3 trips)"
+echo "-- backend: db:seed (8 incidents + 6 users + 5 trips)"
 (cd "$ROOT/backend" && npm run db:seed)
 ok "demo data seeded"
 

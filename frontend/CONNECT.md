@@ -17,7 +17,7 @@ cd backend
 cp .env.example .env   # once: set your own JWT_SECRET (openssl rand -base64 48)
 npm install
 npx prisma migrate deploy
-npm run db:seed        # 8 incidents + 4 users + 3 trips (idempotent, rerun anytime)
+npm run db:seed        # 8 incidents + 6 users + 5 trips (idempotent, rerun anytime)
 npm run dev
 
 # Terminal 2 — disaster-ML sidecar (:8000, optional but recommended)

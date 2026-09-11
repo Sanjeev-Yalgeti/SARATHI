@@ -13,7 +13,7 @@ cd backend
 cp .env.example .env   # once per machine, then edit .env (see below)
 npm install
 npx prisma migrate deploy   # creates tables (once per clone)
-npm run db:seed             # 8 incidents + 4 users + 3 trips (rerun anytime)
+npm run db:seed             # 8 incidents + 6 users + 5 trips (rerun anytime)
 npm run dev
 ```
 
@@ -48,6 +48,8 @@ npm run dev -- --port 5173   # VITE_API_URL=http://localhost:5001 is preset
 | `AS-01-FOOD-04`   | `driver123`   | DRIVER | Live Map / Alerts / Reports — own corridor only  |
 | `AS-02-MED-11`    | `driver123`   | DRIVER | same, Sivasagar trip                             |
 | `AS-03-FUEL-07`   | `driver123`   | DRIVER | same, Sivasagar-via-Nagaon trip                  |
+| `AS-04-WATER-09`  | `driver123`   | DRIVER | same, Sivasagar-via-Jorhat water tanker          |
+| `AS-05-SHELTER-12`| `driver123`   | DRIVER | same, Golaghat-via-Kakatigaon shelter kits       |
 
 1. Open `:5173` → landing → **Get Started** → login as admin.
 2. Live Map, scenario date `2026-07-28`: trucks move, RED pins, RED banner +
