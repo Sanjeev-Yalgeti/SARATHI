@@ -69,6 +69,9 @@ reaches it. Green is proof it happened."
 A full journey is ~50 min at the 2 s tick (1500 GPS points/truck — fine-grained,
 realistic), so each act **stages the decisive stretch** as admin via Mock-GPS
 teleport (`POST /api/simulation/location`), then lets the live tick drive it.
+And when a judge says "show that again": one click on **Reload** (admin) or
+**Restart Trip** (driver) puts every in-scope truck back at Guwahati depot on the
+same date — full restart, no server reboot (`POST /api/simulation/reset`).
 
 | Act | Login | Scenario | Stage (admin teleport) | What to point at |
 |---|---|---|---|---|
@@ -82,6 +85,8 @@ teleport (`POST /api/simulation/location`), then lets the live tick drive it.
   journey is 50 minutes at real pace, so we stage the decisive stretch as admin"*.
 - Staging command (admin tab): `POST /api/simulation/location` `{ vehicleId, lat, lng }`
   — snaps the truck to the nearest road point; the tick resumes from there instantly.
+- Reshow cue: admin **Reload Simulation** (Simulation page header) or driver
+  **Restart Trip** — full depot restart on the same date, RED stops re-hit honestly.
 - If the diversion stalls (sidecar down): *"ML fallback is running — the truck still
   reroutes, risk labels switch to Heuristic."*
 - Act 3 is the anchor: *"This stop IS the feature. Without SARATHI this driver is in
@@ -257,7 +262,8 @@ A: "That's the real Mock-GPS ingest endpoint — a truck literally reports a GPS
 position into the system and it snaps, resumes and re-routes from there, exactly
 like a hardware device would. It exists because a real journey is 50 minutes at
 our fine-grained tick. We say so on screen; the simulation is never dressed up as
-live sensing."
+live sensing. And replays need no teleport at all: one Reload restarts every
+truck from the depot on the same date."
 
 **Q: "Your UI numbers — real or hardcoded?"**
 A: "Alerts/corridor/fleet cards, alert toasts, and the scenario clock all bind to live
@@ -278,8 +284,10 @@ API responses with honest empty states. If it can't be answered honestly, we ren
 - [ ] `./setup.sh` once (seeds 8 incidents + users + trips)
 - [ ] `./dev.sh` → backend :5001 · sidecar :8000 · frontend :5173 all healthy
 - [ ] Login `AS-01-FOOD-04` → Start Simulation → truck moves (guidance blue line)
+- [ ] Driver **Restart Trip** → own truck back at depot, re-driving (no date change)
 - [ ] Admin staging: `POST /api/simulation/location` `{vehicleId:"AS-02-MED-11",lat:26.55,lng:93.15}`
       on peak → Start → watch the DETOUR toast + green swing within ~1 min
+- [ ] Admin **Reload Simulation** → all trucks at depot, same date (judge reshow path)
 - [ ] Key `3` (relief) → stage AS-01 at `26.50,93.95` → watch it arrive → **Delivered ✓**
 - [ ] Key `2` (peak) → stage AS-01 just outside Golaghat's radius → watch the honest stop
 - [ ] `curl :5001/api/health` + `:8000/health` handshake if judge asks
