@@ -554,7 +554,7 @@ export default function LiveMap({
   }, [base, guideKey]);
 
   // Drivers see only their live guidance line; admins see corridor lines.
-  const guidanceRoutes = isDriver && guideGeo ? [guideGeo] : displayRoutes;
+  // (Assembled into visibleRoutes below, after tracking is resolved.)
 
   // Click-to-track (admin portal): click a truck to isolate its live path.
   // Everything else dims so the tracked corridor is the only thing on screen.
@@ -577,7 +577,69 @@ export default function LiveMap({
     if (!trackedPair) return null;
     return routeGeo[trackedPair.key] ?? null;
   })();
-  const visibleRoutes = trackedId ? (trackedGeo ? [trackedGeo] : []) : guidanceRoutes;
+
+  // Live backend path: while a truck runs a backend-known detour, draw THAT
+  // line in blue — Google would route straight back through the RED zone it
+  // just left, so its primary/alternate are demoted to grey context.
+  const pathTarget = isDriver ? driverTruck : trackedTruck;
+  const [livePath, setLivePath] = useState(null);
+  const livePathKey =
+    pathTarget?.diverted && pathTarget?.status !== "idle"
+      ? `${pathTarget.vehicleId}|${pathTarget.lat.toFixed(2)},${pathTarget.lng.toFixed(2)}`
+      : "";
+  useEffect(() => {
+    if (!livePathKey || !pathTarget) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale detour line when trip ends
+      setLivePath(null);
+      return;
+    }
+    let cancelled = false;
+    async function loadPath() {
+      try {
+        const res = await fetch(`${base}/api/simulation/path/${pathTarget.vehicleId}`, {
+          headers,
+        });
+        if (!res.ok) throw new Error(`path ${res.status}`);
+        const data = await res.json();
+        const line = Array.isArray(data.remaining)
+          ? data.remaining.map((pt) => [pt.lat, pt.lng])
+          : [];
+        if (!cancelled) setLivePath(line.length > 1 ? { vehicleId: data.vehicleId, line } : null);
+      } catch {
+        if (!cancelled) setLivePath(null);
+      }
+    }
+    loadPath();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- livePathKey carries id+position
+  }, [base, livePathKey]);
+
+  // Detour view: blue = live backend line, grey = the abandoned Google road.
+  const liveForTracked =
+    livePath && trackedTruck && livePath.vehicleId === trackedTruck.vehicleId;
+  const liveForDriver =
+    livePath && isDriver && driverTruck && livePath.vehicleId === driverTruck.vehicleId;
+  const abandonedLine =
+    (liveForDriver ? guideGeo?.primary : liveForTracked ? trackedGeo?.primary : null) ?? [];
+  const detourRoute = livePath
+    ? {
+        label: `${livePath.vehicleId} · live detour`,
+        primary: livePath.line,
+        alternate: [],
+        abandoned: abandonedLine,
+        source: "sim",
+        distance_km: null,
+        duration_min: null,
+        live: true,
+      }
+    : null;
+  const visibleRoutes = trackedId
+    ? [liveForTracked ? detourRoute : trackedGeo].filter(Boolean)
+    : isDriver
+      ? [liveForDriver ? detourRoute : guideGeo].filter(Boolean)
+      : displayRoutes;
   const visiblePairs = trackedId ? (trackedPair ? [trackedPair] : []) : routePairs;
   const splitTarget = trackedTruck ?? (isDriver ? driverTruck : null);
   // Fly-to point captured at selection time (not per poll).
@@ -829,23 +891,29 @@ export default function LiveMap({
       )}
 
       {/* Driver guidance strip — "which route do I take" at a glance */}
-      {isDriver && showRoutes && (guideGeo || (driverArrived && driverDest)) && (
+      {isDriver && showRoutes && (guideGeo || liveForDriver || (driverArrived && driverDest)) && (
         <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50 text-sky-900 shadow-sm text-sm dark:bg-sky-950/40 dark:border-sky-900 dark:text-sky-200">
           <div className="p-1.5 rounded-lg bg-[#1a73e8] text-white shrink-0">
             <RouteIcon size={16} />
           </div>
           <div className="flex-1 leading-snug">
-            {guideGeo ? (
+            {guideGeo || liveForDriver ? (
               <>
-                <span className="font-extrabold">Your route → {guideGeo.destLabel}</span>
-                {guideGeo.distance_km != null && (
+                <span className="font-extrabold">
+                  {liveForDriver
+                    ? `On detour → ${guideGeo?.destLabel ?? driverDest?.label ?? ""}`
+                    : `Your route → ${guideGeo.destLabel}`}
+                </span>
+                {guideGeo?.distance_km != null && !liveForDriver && (
                   <span> · {guideGeo.distance_km} km · ~{guideGeo.duration_min} min</span>
                 )}
                 <span className="block text-xs opacity-80">
-                  {displayBanner?.blocked
-                    ? "Primary blocked — follow the blue detour."
-                    : "Follow the blue line."}{" "}
-                  (via {guideGeo.source})
+                  {liveForDriver
+                    ? "Following the live detour — grey is the abandoned road. (via sim)"
+                    : displayBanner?.blocked
+                      ? "Primary blocked — follow the blue detour."
+                      : "Follow the blue line."}{" "}
+                  {!liveForDriver && `(via ${guideGeo.source})`}
                 </span>
               </>
             ) : (
@@ -928,9 +996,13 @@ export default function LiveMap({
 
           {/* A→B Route Lines — Google-style: remaining blue w/ white casing,
               travelled grey, alternative grey. Alternate wins on blockage.
-              Click-to-track isolates the tracked truck's path. */}
+              Click-to-track isolates the tracked truck's path. A live
+              backend detour always wins: blue = road actually being driven,
+              grey = the abandoned Google road. */}
           {visibleRoutes.map((r) => {
-            const { main, mainKind, other } = pickRecommended(r, displayBanner?.blocked);
+            const { main, mainKind, other } = r.live
+              ? { main: r.primary, mainKind: "detour", other: r.abandoned ?? [] }
+              : pickRecommended(r, displayBanner?.blocked);
             const info =
               `${r.label}` +
               (r.distance_km != null ? ` · ${r.distance_km} km` : "") +
@@ -976,7 +1048,11 @@ export default function LiveMap({
                   >
                     <Tooltip sticky>
                       <span className="font-bold">
-                        {mainKind === "alternate" ? "Recommended (detour)" : "Recommended"}
+                        {mainKind === "detour"
+                          ? "Live detour"
+                          : mainKind === "alternate"
+                            ? "Recommended (detour)"
+                            : "Recommended"}
                       </span>{" "}
                       &bull; {info}
                     </Tooltip>
