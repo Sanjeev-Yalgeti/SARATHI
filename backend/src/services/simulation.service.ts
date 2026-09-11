@@ -97,7 +97,10 @@ const CRAWL_KMH = 10; // ML CRITICAL band: crawl, never a full stop
 
 // Crash / halt rule: a truck entering BLOCK_RADIUS_KM of a RED incident
 // halts immediately with status='blocked' and speed=0, simulating a crash/blockage.
-const BLOCK_RADIUS_KM = 8;
+// 15 km is deliberately conservative (matches the 15 km threat circles on the
+// Simulation page, PRESENTATION_DECK "Safety Net", and FRONTEND_HANDOFF §7):
+// floodwater moves, so relief trucks must never discover the breach.
+const BLOCK_RADIUS_KM = 15;
 let activeDate = process.env['SCENARIO_DATE'] ?? '2026-07-28';
 let cachedDate: string | null = null;
 let cachedBlocks: Array<{ id: string; lat: number; lng: number }> = [];
