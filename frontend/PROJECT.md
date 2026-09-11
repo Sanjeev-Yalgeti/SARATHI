@@ -241,6 +241,53 @@ recommend alternative routes.
   FR-26                               A Logout action shall clear the
                                       stored JWT token and redirect the
                                       user to the Landing Page.
+
+  FR-27                               Trucks shall complete trips: reaching
+                                      the final road point parks the truck
+                                      at its destination (idle/arrived),
+                                      never looping forever. Date switch
+                                      or driver-safe replay re-drives them.
+
+  FR-28                               Any authenticated role may call
+                                      POST /api/simulation/start to ensure
+                                      the tick loop runs and replay
+                                      arrived trucks. It shall never change
+                                      the scenario date nor clear RED
+                                      stops (admin-only via /date).
+
+  FR-29                               On entering a RED incident radius the
+                                      truck shall first attempt the
+                                      alternate road (routing-engine
+                                      alternate, then Tezpur/NH-15 road).
+                                      It stops only when no bypass passes
+                                      the bypass test. ML bands shall only
+                                      modulate speed, never stop trucks.
+
+  FR-30                               Diversions shall emit a scoped
+                                      alert:detour event and expose the
+                                      live remaining road plus the named
+                                      cleared incident via
+                                      GET /api/simulation/path/:vehicleId.
+
+  FR-31                               The map shall offer Drive mode
+                                      (route + truck + destination only)
+                                      and Analyze mode (heatmap, all
+                                      severities, legend). Drivers stay in
+                                      Drive mode. Layer toggles live behind
+                                      one Layers panel.
+
+  FR-32                               Each truck shall carry its story
+                                      corridor (depot → via-points →
+                                      destination); map lines bend through
+                                      flood-hit towns via chained routing
+                                      (&via= legs). Valley filter shall
+                                      reject lines leaving the Brahmaputra
+                                      valley.
+
+  FR-33                               Dashboard numbers shall only render
+                                      values from live API responses with
+                                      honest empty states; nothing
+                                      hardcoded, nothing fabricated.
   -----------------------------------------------------------------------
 
 ------------------------------------------------------------------------
@@ -369,6 +416,20 @@ recommend alternative routes.
     Logout button.
 -   Route guard: unauthenticated users accessing `/dashboard` are
     redirected to `/login`.
+-   Drive mode (default; drivers always): route + truck + destination,
+    RED/HIGH incidents only, heat off, legend shut. Analyze mode
+    (admin, persisted): full heatmap, all severities, legend.
+-   Layer toggles (incidents, fleet, routes, banner, heatmap) live
+    behind one Layers panel; Drive/Analyze segmented control beside
+    the date switcher; admin presenter shortcuts 1/2/3 jump the
+    scenario clock across Onset → Peak → Relief.
+-   Google-style lines: blue planned guidance, green live SARATHI
+    detour (bypass-tested backend geometry only), grey travelled /
+    abandoned roads, green A (source) / red B (destination) pins.
+-   Click-to-track isolates a truck's live path with travelled split,
+    map fly-to, follow-with-drag-pause, and fit-routes control.
+-   Real-time alert toasts (blockage/risk/detour) on every dashboard
+    for both roles via Socket.io; drivers receive only their truck.
 
 ## 6.3 Web Backend (Node.js + Express)
 
@@ -404,6 +465,15 @@ recommend alternative routes.
 -   Calculate suitable routes.
 -   Generate alternate routes when risks or blockages are detected.
 -   Use GIS data to support spatial decisions.
+-   Chain story corridors leg-by-leg through waypoints (`getRouteVia`,
+    `GET /api/routes?from=…&to=…&via=lat,lng|…`); one bad leg never
+    kills the whole corridor (Google → OSRM → fallback per leg).
+-   Correct Google polyline decoding; valley filter rejects lines that
+    leave the Brahmaputra valley (lat > 26.85 & lng < 94.0, or
+    lat > 27.15).
+-   Each truck carries its story corridor (depot → via-points →
+    destination) on `GET /api/vehicles` so map lines bend through
+    flood-hit towns (e.g. via Jorhat / Kakatigaon / Tezpur).
 
 ## 6.7 Risk & Blockage Calculator
 
@@ -411,12 +481,32 @@ recommend alternative routes.
 -   Use a weighted risk formula.
 -   Produce a risk score and blockage/risk status.
 -   Provide results to the intelligence controller.
+-   RED-encounter decision order per 2 s tick: advance → RED radius
+    check (15 km) → divert-or-block → ML speed modulation (CRITICAL
+    crawls 10 km/h, HIGH slows 20 km/h; ML never stops trucks).
+-   Bypass test (`alternateClearsTrigger`): 5 km escape segment
+    exempt, every point beyond must stay outside the trigger's
+    15 km radius; chained diversions capped at 3 per date, spaced
+    ≥25 points apart (no ping-pong API loops).
+-   Diversion candidates: routing-engine alternate, then Tezpur/NH-15
+    north-bank OSRM road; the cleared incident (id + road) is named
+    on the detour for map proof labels.
+-   Stop fallback: status blocked, speed 0, stays stopped until an
+    admin date switch; destinations inside a RED radius (e.g.
+    Golaghat camp ~5.1 km from ASDMA-04) can never divert — honest
+    stop, never fabricated arrival.
 
 ## 6.8 Realtime Socket.io Handler
 
 -   Push live vehicle positions and alerts over WebSockets.
 -   Process incident or vehicle updates.
 -   Forward risk-driven events to the Core Intelligence Controller.
+-   JWT handshake (`auth.token`); rooms `admin` and `driver:<id>`.
+-   Events: `vehicle:update` (2 s tick + on demand), `alert:risk`
+    (ML band transitions only), `alert:blockage` (RED stops),
+    `alert:detour` (alternate taken, with incident + road label).
+-   Frontend `useAlertsSocket` + toast stack on every dashboard
+    (both roles, auto-dismiss, driver-scoped by room).
 
 ## 6.9 Persistence (Prisma + SQLite, PostGIS-ready)
 
@@ -436,6 +526,14 @@ recommend alternative routes.
 -   Generate dummy GPS coordinates.
 -   Send mock latitude/longitude values.
 -   Support project demonstrations without real hardware.
+-   In-memory tick loop (2 s): OSRM road lines resampled to 150
+    points per trip (~5 min full travel); no wrap-around — arrival
+    parks the truck idle at its destination; date switch or
+    POST /api/simulation/start replays (Start snaps to depot).
+-   Mock-GPS ingest (`POST /api/simulation/location`) snaps the
+    internal clock to the nearest line point and resumes.
+-   Live remaining road per truck via `getRemainingPath`, exposed at
+    GET /api/simulation/path/:vehicleId (driver-scoped).
 
 ## 6.11 External APIs and GIS Sources
 
@@ -549,10 +647,14 @@ recommend alternative routes.
   GET /api/vehicles                   Retrieve current vehicle locations
                                       and status. Admin sees all; Driver
                                       sees only their own vehicle.
-                                      Requires valid token.
+                                      Each truck carries its story
+                                      corridor + diverted flag. Requires
+                                      valid token.
 
   GET /api/routes                     Retrieve route and alternate route
-                                      information. Requires valid token.
+                                      information. Optional
+                                      &via=lat,lng|… chains story legs.
+                                      Requires valid token.
 
   GET /api/risk                       Retrieve calculated risk for a
                                       route, vehicle, or area. Requires
@@ -569,6 +671,28 @@ recommend alternative routes.
   POST /api/simulation/location       Submit mock GPS data from the
                                       simulation module. Requires valid
                                       token.
+
+  GET /api/simulation/status          Live board: scenario date, vehicles,
+                                      ML state. Driver sees own truck.
+                                      Requires valid token.
+
+  GET /api/simulation/path/:vehicleId Live remaining road + diverted flag
+                                      + named cleared incident. Driver:
+                                      own truck only (else 404). Requires
+                                      valid token.
+
+  POST /api/simulation/start          Driver-safe start/replay for any
+                                      role. Never changes the date, never
+                                      clears RED stops. Requires valid
+                                      token.
+
+  POST /api/simulation/date           Admin switches the scenario clock
+                                      (unblocks + replays). Admin token
+                                      required.
+
+  POST /api/simulation/scenario       Admin what-if knobs (rainfall_mm,
+                                      river_danger_level_count). Admin
+                                      token required.
 
   POST /api/incidents                 Create or process incident
                                       information. Requires valid token.
@@ -621,6 +745,14 @@ The system supports two roles: **Admin** and **Truck Driver**.
   AS-02-MED-11      DRIVER  Guwahati → Sivasagar
 
   AS-03-FUEL-07     DRIVER  Guwahati → Sivasagar
+
+  AS-04-WATER-09      DRIVER  Guwahati → Sivasagar via Jorhat
+                                      (PENDING SEED — truck + login exist,
+                                      DB user not seeded yet)
+
+  AS-05-SHELTER-12    DRIVER  Guwahati → Golaghat via Kakatigaon
+                                      (PENDING SEED — truck + login exist,
+                                      DB user not seeded yet)
   -----------------------------------------------------------------------
 
 ## 10.3 Interface Requirements by Role
@@ -636,6 +768,8 @@ The system supports two roles: **Admin** and **Truck Driver**.
 -   Analytics and reporting dashboards.
 -   Logged-in user name, role badge, and Logout button in the top
     navigation bar.
+-   Drive/Analyze map modes, click-to-track with follow, green live
+    detours with named-incident proof, presenter 1/2/3 shortcuts.
 
 **Truck Driver interface shall provide:**
 -   Live Map scoped to the driver's assigned route only.
@@ -644,6 +778,9 @@ The system supports two roles: **Admin** and **Truck Driver**.
 -   No access to Trips management, Analytics, Simulation, or
     Resources sections.
 -   Logged-in vehicle ID and Logout button in the top navigation bar.
+-   Driver-safe Start Simulation button, live GPS guidance line with
+    travelled split, arrival/detour states, real-time alert toasts
+    scoped to their own truck.
 
 ------------------------------------------------------------------------
 
@@ -671,6 +808,15 @@ The system supports two roles: **Admin** and **Truck Driver**.
     and should be individualised in production.
 -   JWT_SECRET must be set as a server-side environment variable and
     must never be committed to source control.
+-   The 15 km RED stop radius is a deliberately conservative modeling
+    parameter, not a surveyed flood boundary; camp/waypoint pins are
+    town-center approximations, never surveyed depot coordinates.
+-   All scenario demos are replays of recorded ASDMA bulletin rows
+    (incidents.json); UI numbers render live API values only, with
+    honest empty states — nothing hardcoded, nothing fabricated.
+-   Google/OSRM routing is flood-unaware: the map never presents its
+    geometry as flood-safe; only bypass-tested backend lines earn the
+    green detour rendering.
 
 ------------------------------------------------------------------------
 
@@ -702,11 +848,38 @@ The system supports two roles: **Admin** and **Truck Driver**.
 -   Incident, report, risk, user, and trip data persists across
     restarts via Prisma + SQLite and can be reseeded on any clone.
 -   Risk alerts are visible to the user in the dashboard.
+-   Trucks park arrived at destinations (no infinite looping);
+    driver-safe replay restores motion without touching date/stops.
+-   A RED encounter visibly diverts onto a tested alternate (detour
+    alert + green line + named cleared incident) wherever geometry
+    allows; honest stops persist only where no bypass exists.
+-   Driver's own-truck path endpoint is reachable (200) while other
+    trucks' paths return 404; admin reaches all.
+-   Drive mode shows route + truck + destination only; Analyze mode
+    restores heatmap, all severities, and the legend.
+-   Dashboard cards match live API values per viewed date, including
+    honest empty states; no hardcoded figures anywhere.
 
 ------------------------------------------------------------------------
 
 # 13. Future Enhancements
 
+-   STAGED-at-edge wording for stops whose destination sits inside a
+    RED radius (parked plan; backend already stops at the edge).
+-   Dedicated flood_prob score + dual landslide/flood heat layers
+    (parked plan; data already typed per incident).
+-   Demo-speed tick control (1×/2×/4×) for shortened judging runs.
+-   Google map tiles upgrade (tiles are Carto Voyager, routing is
+    Google/OSRM; key stays server-side only).
+-   Merge TEST_CASES-subset geocoded roads into the seed via
+    `npm run geocode:incidents` staging review (Google-only,
+    skip-if-missing, incidents.json stays real-data-only).
+-   Source bulletin district/population/toll figures from the 08--09 Aug
+    PDFs instead of stub constants.
+-   Remove or wire dead routes (`alerts.js`, `maps.js`, `geocode.js`,
+    `trip-planner.js`) currently unmounted in `src/app.ts`.
+-   (Done since the last spec review: Socket.io live pushes,
+    mock-GPS ingest, JWT on weather/risk.)
 -   PostgreSQL + PostGIS migration for spatial queries (`ST_Contains`,
     `ST_DWithin`).
 -   Machine-learning-based traffic and risk prediction.
@@ -719,24 +892,6 @@ The system supports two roles: **Admin** and **Truck Driver**.
 -   JWT stored in HttpOnly cookies for improved security.
 -   Per-driver individualised passwords and self-service password reset.
 -   Mobile application support.
-<<<<<<< HEAD
-=======
--   Socket.io true real-time pushes (`vehicle:update`, `alert:risk`,
-    `alert:blockage`); dashboard currently polls every 2s.
--   Google map tiles upgrade (dashboard currently uses free
-    OpenStreetMap tiles, no key required).
--   Merge TEST_CASES-subset geocoded roads into the seed via
-    `npm run geocode:incidents` staging review (Google-only,
-    skip-if-missing, incidents.json stays real-data-only).
--   Source bulletin district/population/toll figures from the 08--09 Aug
-    PDFs instead of stub constants.
--   Remove or wire dead routes (`alerts.js`, `maps.js`, `geocode.js`,
-    `trip-planner.js`) currently unmounted in `src/app.ts`.
--   Implement `POST /api/simulation/location` mock-GPS ingest (PROJECT
-    §9) alongside the internal simulation clock.
--   Require JWT on `GET /api/weather` and `GET /api/risk` per FR-19
-    (currently public for dashboard fallback).
->>>>>>> main
 
 ------------------------------------------------------------------------
 
