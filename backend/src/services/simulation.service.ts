@@ -15,21 +15,23 @@ export type Coordinates = {
 
 // Corridor: Guwahati → Golaghat → Sivasagar via NH27/NH37 (naman_alone.md step 3).
 // OSRM wants lng,lat pairs joined by ';'.
-const ROUTES: Record<string, Coordinates[]> = {  'AS-01-FOOD-04': [
+const ROUTES: Record<string, Coordinates[]> = {
+  'AS-01-FOOD-04': [
     { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
-    { lng: 93.97, lat: 26.51 }, // Golaghat relief camp
+    { lng: 93.97, lat: 26.51 }, // Golaghat relief camp via NH-715 (approaches Kaziranga breach ASDMA-01)
   ],
 
   'AS-02-MED-11': [
     { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
-    { lng: 93.97, lat: 26.51 }, // via Golaghat
-    { lng: 94.63, lat: 27.14 }, // Sivasagar
+    { lng: 92.7926, lat: 26.6339 }, // Tezpur Bypass (NH-15 northern corridor — suggested detour path)
+    { lng: 94.6426, lat: 26.9826 }, // Sivasagar
   ],
 
   'AS-03-FUEL-07': [
     { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
-    { lng: 92.68, lat: 26.35 }, // via Nagaon (waypoint, not a depot)
-    { lng: 94.63, lat: 27.14 }, // Sivasagar
+    { lng: 92.68, lat: 26.35 }, // via Nagaon
+    { lng: 93.97, lat: 26.51 }, // via Golaghat
+    { lng: 94.6426, lat: 26.9826 }, // Sivasagar
   ],
 };
 
@@ -41,21 +43,14 @@ export function routeDestination(vehicleId: string): Coordinates | null {
 }
 
 const TICK_MS = 2000;
-const POINTS_PER_TRIP = 150; //Full trip = approx 5min at 1 point/2s
+const POINTS_PER_TRIP = 1500; // Reduced to 1/10th of original 150 speed for realistic transit
 const SPEED_KMH = 40;
 const SLOW_KMH = 20; // ML HIGH band: cautious speed instead of a full stop
-const CRAWL_KMH = 10; // ML CRITICAL band: crawl, never a full stop (only real
-// RED incidents stop trucks — FRONTEND_HANDOFF.md §7: "only real RED
-// incidents (15 km radius) can block trucks"). The model predicts CRITICAL
-// for most corridor districts on every scenario date, so a CRITICAL hard
-// stop would freeze the whole fleet permanently on all dates.
+const CRAWL_KMH = 10; // ML CRITICAL band: crawl, never a full stop
 
-// Step 5 stop rule (temporary brains until Aryan returns): on the active
-// scenario date, a truck entering BLOCK_RADIUS_KM of a RED incident first
-// tries the alternate road (tryDivert — once per date); only when no safe
-// alternate exists does it stop. HIGH never stops (depot guard: KAM-01 sits
-// ~2 km from the depot).
-const BLOCK_RADIUS_KM = 15;
+// Crash / halt rule: a truck entering BLOCK_RADIUS_KM of a RED incident
+// halts immediately with status='blocked' and speed=0, simulating a crash/blockage.
+const BLOCK_RADIUS_KM = 8;
 let activeDate = process.env['SCENARIO_DATE'] ?? '2026-07-28';
 let cachedDate: string | null = null;
 let cachedBlocks: Array<{ id: string; lat: number; lng: number }> = [];
@@ -395,47 +390,19 @@ async function tick(): Promise<void> {
     const { lng, lat } = p.line[p.idx] as Coordinates;
     const hit = blocks.find((b) => haversineKm(lat, lng, b.lat, b.lng) <= BLOCK_RADIUS_KM);
     if (hit) {
-      // First RED encounter (or a fresh one far down the road): try the
-      // alternate road before stopping. Chained diversions are capped and
-      // spaced so one spot can't trigger an API-hammering ping-pong loop.
-      if (p.divertCount < MAX_DIVERTS && p.idx - p.lastDivertIdx > MIN_DIVERT_GAP) {
-        const detour = await tryDivert(vehicleId, { lat, lng }, hit);
-        if (detour) {
-          p.line = detour.line;
-          p.idx = 0;
-          p.diverted = true;
-          p.divertCount += 1;
-          p.lastDivertIdx = 0;
-          truck.lat = lat;
-          truck.lng = lng;
-          truck.status = 'moving';
-          truck.speed = SLOW_KMH;
-          truck.diverted = true;
-          console.warn(`[sim] ${vehicleId} DIVERTED onto alternate road near ${hit.id} on ${activeDate}`);
-          emitVehicleUpdate(truck);
-          emitDetourAlert({
-            vehicleId,
-            lat,
-            lng,
-            reason: `RED incident ${hit.id} on primary corridor — diverted: ${detour.label}`,
-            incidentId: hit.id,
-            alternateLabel: detour.label,
-            scenarioDate: activeDate,
-          });
-          continue;
-        }
-      }
+      // If a truck enters/coincides with areas having issues marked red,
+      // they stop immediately, simulating crash / road blockage.
       truck.lat = lat;
       truck.lng = lng;
       truck.status = 'blocked';
       truck.speed = 0;
-      console.warn(`[sim] ${vehicleId} BLOCKED near ${hit.id} on ${activeDate}`);
+      console.warn(`[sim] ${vehicleId} CRASH/HALTED: entered RED hazard zone near ${hit.id} on ${activeDate}`);
       emitVehicleUpdate(truck);
       emitBlockageAlert({
         vehicleId,
         lat,
         lng,
-        reason: `RED incident ${hit.id} within ${BLOCK_RADIUS_KM} km`,
+        reason: `CRASH / ROAD BREACH at RED incident ${hit.id} on ${activeDate}`,
         incidentId: hit.id,
         scenarioDate: activeDate,
       });

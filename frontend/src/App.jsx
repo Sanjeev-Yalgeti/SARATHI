@@ -26,6 +26,11 @@ export default function SarathiApp() {
   // Live alert popups (Socket.io) for every logged-in role.
   const { toasts, dismiss } = useAlertsSocket(isLoggedIn, currentUser?.id);
 
+  // Keep document element dark class synchronized with theme state
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
   // Session Hydration on page load / refresh (per FRONTEND_HANDOFF.md §3)
   useEffect(() => {
     let isMounted = true;
@@ -123,6 +128,8 @@ export default function SarathiApp() {
             c={c}
             onGetStarted={() => setActive(isLoggedIn ? (isDriver ? "Live Map" : "Trips") : "Login")}
             setActive={setActive}
+            isLoggedIn={isLoggedIn}
+            userRole={userRole}
           />
         )}
 

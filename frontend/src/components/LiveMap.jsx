@@ -50,7 +50,7 @@ const PLACE_COORDS = [
   { match: "guwahati", label: "Guwahati", lat: 26.1844, lng: 91.7458 },
   { match: "nagaon", label: "Nagaon", lat: 26.35, lng: 92.68 },
   { match: "golaghat", label: "Golaghat", lat: 26.51, lng: 93.97 },
-  { match: "sivasagar", label: "Sivasagar", lat: 27.14, lng: 94.63 },
+  { match: "sivasagar", label: "Sivasagar", lat: 26.9826, lng: 94.6426 },
   { match: "jorhat", label: "Jorhat", lat: 26.75, lng: 94.21 },
 ];
 
@@ -357,11 +357,18 @@ export default function LiveMap({
           const data = await res.json();
           const toLatLng = (line) =>
             Array.isArray(line) ? line.map((pt) => [pt.lat, pt.lng]) : [];
+          const filterValley = (line) => {
+            const pts = toLatLng(line);
+            if (pts.some(([lat, lng]) => (lat > 26.85 && lng < 94.0) || lat > 27.15)) return [];
+            return pts;
+          };
           if (!cancelled) {
+            const validPrimary = filterValley(data.primary);
+            const validAlternate = filterValley(data.alternate);
             const geo = {
               label: pair.key,
-              primary: toLatLng(data.primary),
-              alternate: toLatLng(data.alternate),
+              primary: validPrimary.length > 0 ? validPrimary : toLatLng(data.primary),
+              alternate: validAlternate,
               source: data.source ?? "unknown",
               distance_km: data.distance_km ?? null,
               duration_min: data.duration_min ?? null,
@@ -419,8 +426,6 @@ export default function LiveMap({
     }
     let cancelled = false;
     async function loadGuide() {
-      const toLatLng = (line) =>
-        Array.isArray(line) ? line.map((pt) => [pt.lat, pt.lng]) : [];
       try {
         const res = await fetch(
           `${base}/api/routes?from=${driverTruck.lat},${driverTruck.lng}&to=${driverDest.lat},${driverDest.lng}`,
@@ -428,12 +433,21 @@ export default function LiveMap({
         );
         if (!res.ok) throw new Error(`guide ${res.status}`);
         const data = await res.json();
+        const toLatLng = (line) =>
+          Array.isArray(line) ? line.map((pt) => [pt.lat, pt.lng]) : [];
+        const filterValley = (line) => {
+          const pts = toLatLng(line);
+          if (pts.some(([lat, lng]) => (lat > 26.85 && lng < 94.0) || lat > 27.15)) return [];
+          return pts;
+        };
         if (!cancelled) {
+          const validPrimary = filterValley(data.primary);
+          const validAlternate = filterValley(data.alternate);
           setGuideGeo({
             label: `You→${driverDest.label}`,
             destLabel: driverDest.label,
-            primary: toLatLng(data.primary),
-            alternate: toLatLng(data.alternate),
+            primary: validPrimary.length > 0 ? validPrimary : toLatLng(data.primary),
+            alternate: validAlternate,
             source: data.source ?? "unknown",
             distance_km: data.distance_km ?? null,
             duration_min: data.duration_min ?? null,

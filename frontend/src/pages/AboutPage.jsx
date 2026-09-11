@@ -1,5 +1,6 @@
 import { Mountain, Database, TrendingUp, Route, Bell as BellIcon, LayoutDashboard } from "lucide-react";
 import StatCard from "../components/StatCard";
+import SupportedStates from "../components/SupportedStates";
 
 const STATS = [
   { value: "8", label: "NER States" },
@@ -105,14 +106,9 @@ export default function AboutPage({ c }) {
       </div>
 
       {/* Supported NER States */}
-      <h2 className="text-2xl font-extrabold text-center mb-6" style={{ color: c.text }}>
-        Supported NER States
-      </h2>
-      {/* <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-14">
-        {STATES.map((s) => (
-          
-        ))}
-      </div> */}
+      <div className="mb-14">
+        <SupportedStates c={c} />
+      </div>
 
       {/* Footer */}
       <div

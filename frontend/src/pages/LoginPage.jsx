@@ -28,11 +28,8 @@ export default function LoginPage({ setActive, setIsLoggedIn, setUserRole, setCu
       if (setUserRole) setUserRole(user.role);
       if (setCurrentUser) setCurrentUser(user);
 
-      if (user.role === 'DRIVER') {
-        setActive('Live Map');
-      } else {
-        setActive('Home');
-      }
+      // Both ADMIN and DRIVER land on Live Map after login
+      setActive('Live Map');
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Login failed. Please check your credentials.';
       setError(msg);

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Clock, MapPin, CloudRain, FileText, Database, Brain, Navigation2, Bell, LayoutDashboard, ArrowRight, ChevronDown, Camera } from "lucide-react";
 import SubmitReportModal from "../components/SubmitReportModal";
+import SupportedStates from "../components/SupportedStates";
 
-export default function HomePage({ c, onGetStarted, setActive }) {
+export default function HomePage({ c, onGetStarted, setActive, isLoggedIn = false, userRole = null }) {
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     /* ── Hero feature list ── */
     const heroItems = [
@@ -87,14 +88,16 @@ export default function HomePage({ c, onGetStarted, setActive }) {
                             <ArrowRight size={20} />
                         </button>
 
-                        <button
-                            type="button"
-                            onClick={() => setIsReportModalOpen(true)}
-                            className="px-7 py-3.5 rounded-full font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2 cursor-pointer bg-white/95 dark:bg-slate-900/95 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 backdrop-blur-md"
-                        >
-                            <Camera size={20} className="text-emerald-600" />
-                            <span>Report Road Incident (Public)</span>
-                        </button>
+                        {(!isLoggedIn || userRole !== "ADMIN") && (
+                            <button
+                                type="button"
+                                onClick={() => setIsReportModalOpen(true)}
+                                className="px-7 py-3.5 rounded-full font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2 cursor-pointer bg-white/95 dark:bg-slate-900/95 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 backdrop-blur-md"
+                            >
+                                <Camera size={20} className="text-emerald-600" />
+                                <span>Report Road Incident (Public)</span>
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex flex-col items-center gap-1 animate-bounce">
@@ -155,7 +158,7 @@ export default function HomePage({ c, onGetStarted, setActive }) {
                                     </div>
                                 </div>
                                 {i < steps.length - 1 && (
-                                    <div className="flex-shrink-0 flex items-center justify-center px-3 py-4 md:py-0">
+                                    <div className="shrink-0 flex items-center justify-center px-3 py-4 md:py-0">
                                         <ArrowRight size={22} style={{ color: c.textMuted }} />
                                     </div>
                                 )}
@@ -165,7 +168,8 @@ export default function HomePage({ c, onGetStarted, setActive }) {
                 </div>
             </section>
 
-
+            {/* ═══ SUPPORTED NER STATES ═══ */}
+            <SupportedStates c={c} />
 
             {/* ═══ FOOTER ═══ */}
             <footer style={{ background: c.footerBg, color: c.footerText }}>

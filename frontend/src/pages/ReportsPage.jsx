@@ -182,22 +182,30 @@ export default function ReportsPage({ c, userRole = "ADMIN" }) {
     };
   }, []);
 
+  const [toastMessage, setToastMessage] = useState(null);
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      if (isMountedRef.current) setToastMessage(null);
+    }, 4000);
+  };
+
   // Handle Admin Decision: Approve or Reject
   const handleDecision = async (reportId, decision) => {
     setProcessingId(reportId);
     try {
       await apiClient.patch(`/api/reports/${reportId}`, { status: decision });
-      setReports((prev) =>
-        prev.map((r) => (r.id === reportId ? { ...r, status: decision } : r))
-      );
+      if (decision === "rejected") {
+        // Disappear immediately from view
+        setReports((prev) => prev.filter((r) => r.id !== reportId));
+        showToast("Report rejected and dismissed from view. (Reappears on refresh/login)");
+      } else {
+        setReports((prev) =>
+          prev.map((r) => (r.id === reportId ? { ...r, status: decision } : r))
+        );
+        showToast("Report approved! Added to verified incidents on map.");
+      }
     } catch (err) {
-      // Offline fallback commented out per user request:
-      // if (isNetworkError(err)) {
-      //   setReports((prev) =>
-      //     prev.map((r) => (r.id === reportId ? { ...r, status: decision } : r))
-      //   );
-      //   return;
-      // }
       alert(err.response?.data?.error || "Failed to update report decision.");
     } finally {
       setProcessingId(null);
@@ -228,6 +236,9 @@ export default function ReportsPage({ c, userRole = "ADMIN" }) {
   // Filtered reports
   const filteredReports = useMemo(() => {
     return reports.filter((r) => {
+      // Rejected reports disappear from the active feed
+      if (r.status === "rejected" && tab !== "rejected") return false;
+
       if (tab === "pending" && r.status !== "pending") return false;
       if (tab === "approved" && r.status !== "approved") return false;
       if (tab === "rejected" && r.status !== "rejected") return false;
@@ -238,13 +249,20 @@ export default function ReportsPage({ c, userRole = "ADMIN" }) {
   }, [reports, tab, typeFilter]);
 
   // Counts
-  const countAll = reports.length;
+  const countAll = reports.filter((r) => r.status !== "rejected").length;
   const countPending = reports.filter((r) => r.status === "pending").length;
   const countApproved = reports.filter((r) => r.status === "approved").length;
   const countRejected = reports.filter((r) => r.status === "rejected").length;
 
   return (
-    <div className="p-4 sm:p-6 md:p-10 max-w-7xl mx-auto space-y-6 font-sans">
+    <div className="p-4 sm:p-6 md:p-10 max-w-7xl mx-auto space-y-6 font-sans relative">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xl text-xs sm:text-sm font-semibold border border-slate-700">
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
@@ -269,15 +287,17 @@ export default function ReportsPage({ c, userRole = "ADMIN" }) {
             <span>ASDMA Bulletin PDF</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setIsSubmitModalOpen(true)}
-            className="px-5 py-2.5 rounded-xl font-bold text-white shadow-md hover:opacity-90 active:scale-95 transition-all flex items-center gap-2 cursor-pointer text-xs sm:text-sm"
-            style={{ background: c.green || "#0a8754" }}
-          >
-            <Camera size={16} />
-            <span>Submit Incident Report</span>
-          </button>
+          {!isAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsSubmitModalOpen(true)}
+              className="px-5 py-2.5 rounded-xl font-bold text-white shadow-md hover:opacity-90 active:scale-95 transition-all flex items-center gap-2 cursor-pointer text-xs sm:text-sm"
+              style={{ background: c.green || "#0a8754" }}
+            >
+              <Camera size={16} />
+              <span>Submit Incident Report</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -289,7 +309,7 @@ export default function ReportsPage({ c, userRole = "ADMIN" }) {
             { key: "all", label: `All Reports (${countAll})` },
             { key: "pending", label: `Pending Decision (${countPending})` },
             { key: "approved", label: `Approved / Live (${countApproved})` },
-            { key: "rejected", label: `Rejected (${countRejected})` },
+            ...(countRejected > 0 ? [{ key: "rejected", label: `Rejected (${countRejected})` }] : []),
           ].map((t) => (
             <button
               key={t.key}
