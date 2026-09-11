@@ -9,7 +9,7 @@ Corridor: Guwahati (26.1844,91.7458) → Golaghat (26.51,93.97) → Sivasagar (2
 
 - `npm install` in `backend/` (auto-runs `prisma generate`)
 - `npx prisma migrate deploy` (creates tables from committed `prisma/migrations/`)
-- `npm run db:seed` (loads 8 ASDMA incidents + 3 trucks + event dates)
+- `npm run db:seed` (loads 8 ASDMA incidents + 5 trucks + event dates)
 - `npm run dev` (tsx `src/index.ts`)
 - Env: `PORT`, `DATABASE_URL="file:./dev.db"`, `GOOGLE_MAPS_KEY` (Weather + Routes), `OPENMETEO_URL` (fallback), `OSRM_URL` (fallback), `IMD_BASE_URL` (fallback), `ML_URL` (Dhruv's service, default `http://localhost:8000`)
 
@@ -59,7 +59,7 @@ Decided integrations (locked):
 ## TRACK 3 — Simulation + Socket.io + Incidents (Person A)
 
 - [ ] 3.1 `data/incidents.json` (seed source, NOT runtime store): 8-10 real rows from ASDMA 01.07.2024 breach table + Aug 2026 bulletin (road name, lat, lng, type: breach/landslide/overtop, severity, eventDate). `prisma/seed.ts` loads these into `Incident` table.
-- [ ] 3.2 `data/scenario.json`: 3 trucks: `AS-01-FOOD-04 (rice+medicines, Guwahati→Golaghat camp)`, `AS-02-MED-11 (medicines, Guwahati→Sivasagar)`, `AS-03-FUEL-07 (fuel, Guwahati→Sivasagar via Nagaon)`. Each: origin, destination, cargoType, OSRM polyline file. Trucks stay in-memory, seeded at boot.
+- [ ] 3.2 `src/services/trucks.ts` + `simulation.service.ts` ROUTES: 5 trucks: `AS-01-FOOD-04 (rice+medicines, Guwahati→Golaghat camp)`, `AS-02-MED-11 (medicines, Guwahati→Sivasagar)`, `AS-03-FUEL-07 (fuel, Guwahati→Sivasagar via Nagaon)`, `AS-04-WATER-09 (drinking-water, Guwahati→Sivasagar relief camp via Jorhat)`, `AS-05-SHELTER-12 (tarpaulins+blankets, Guwahati→Golaghat camp via Kakatigaon)`. Each: origin, destination, cargoType, story corridor. Trucks stay in-memory, seeded at boot; seed auto-creates 1 DRIVER + 1 trip per truck.
 - [ ] 3.3 `simulation.service.ts`: fetch OSRM polyline once per truck, interpolate 1 point / 2 sec, emit `vehicle:update { vehicleId, lat, lng, speed, status }`. Query `prisma.incident.findMany({ where: { eventDate } })` for block spots → at flood index `speed=0, status=blocked`, emit `alert:blockage`.
 - [ ] 3.4 Sockets: `src/sockets/index.ts` — on `client:subscribe` send current positions; tick 2s. Events: `vehicle:update`, `alert:risk`, `alert:blockage`.
 - [ ] 3.5 Incidents API via Prisma: `GET /api/incidents?date=2026-08-09` → `prisma.incident.findMany`, `POST /api/incidents` → `prisma.incident.create` (manual blockage for demo button). Restart-safe.
