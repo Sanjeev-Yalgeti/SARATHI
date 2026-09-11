@@ -42,25 +42,10 @@ router.get('/', optionalAuthenticate, async (req: Request, res: Response) => {
     res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     return;
   }
-  const rawReports = await prisma.fieldReport.findMany({
+  const reports = await prisma.fieldReport.findMany({
     where: date ? { eventDate: date } : undefined,
     orderBy: { createdAt: 'desc' },
   });
-
-  // Re-appear on refresh/login: rejected reports are restored to pending so triage can be demonstrated repeatedly
-  const reports = await Promise.all(
-    rawReports.map(async (r) => {
-      if (r.note.includes('[STATUS:rejected]')) {
-        const restoredNote = r.note.replace(/\[STATUS:rejected\]/g, '[STATUS:pending]');
-        await prisma.fieldReport.update({
-          where: { id: r.id },
-          data: { note: restoredNote },
-        }).catch(() => null);
-        return { ...r, note: restoredNote };
-      }
-      return r;
-    })
-  );
 
   if (req.user?.role !== 'DRIVER') {
     res.json({ reports });

@@ -532,9 +532,6 @@ export default function LiveMap({
     };
   }, [base, headers, routePairs, routePairKeys]);
 
-  const displayRoutes = showRoutes
-    ? routePairs.map((p) => routeGeo[p.key]).filter(Boolean)
-    : [];
 
   // Driver guidance: live GPS → destination (Google-Maps-style "which route
   // do I take"). Corridor lines above start at the depot; this one starts
@@ -632,6 +629,71 @@ export default function LiveMap({
     return routeGeo[trackedPair.key] ?? null;
   })();
 
+  // Live paths for ALL diverted trucks (untracked admin view).
+  // Polls every pollMs so the blue detour line stays current for every truck
+  // visible on the map, not just the one being tracked.
+  const [allLivePaths, setAllLivePaths] = useState({});
+  // Key: stringify diverted vehicle positions so the effect re-runs when any
+  // diverted truck moves (same frequency as the vehicle poll — 2s).
+  const divertedKey = displayVehicles
+    .filter((v) => v.diverted && v.status !== "idle")
+    .map((v) => `${v.vehicleId}:${v.lat.toFixed(3)},${v.lng.toFixed(3)}`)
+    .join("|");
+  useEffect(() => {
+    if (isDriver || trackedId) return; // handled by livePathKey/livePath
+    const diverted = displayVehicles.filter((v) => v.diverted && v.status !== "idle");
+    if (diverted.length === 0) {
+      setAllLivePaths({});
+      return;
+    }
+    let cancelled = false;
+    async function fetchAll() {
+      const results = {};
+      await Promise.all(
+        diverted.map(async (v) => {
+          try {
+            const res = await fetch(`${base}/api/simulation/path/${v.vehicleId}`, { headers });
+            if (!res.ok) return;
+            const data = await res.json();
+            const line = Array.isArray(data.remaining)
+              ? data.remaining.map((pt) => [pt.lat, pt.lng])
+              : [];
+            if (line.length > 1) {
+              results[v.vehicleId] = { line, clears: data.cleared ?? null };
+            }
+          } catch {
+            /* silent — stale path stays visible */
+          }
+        })
+      );
+      if (!cancelled) setAllLivePaths(results);
+    }
+    fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- divertedKey tracks position changes
+  }, [base, headers, divertedKey, isDriver, trackedId]);
+
+  const displayRoutes = showRoutes
+    ? routePairs
+        .map((p) => {
+          const v = displayVehicles.find((dv) => dv.vehicleId === p.key);
+          const lp = allLivePaths[p.key];
+          // Diverted truck: show live remaining path (blue) + old corridor (grey).
+          if (v?.diverted && lp && lp.line.length > 1) {
+            return {
+              label: `${p.key} · SARATHI detour`,
+              primary: lp.line,
+              alternate: [],
+              abandoned: routeGeo[p.key]?.primary ?? [],
+              source: "sim",
+              distance_km: null,
+              duration_min: null,
+              live: true,
+            };
+          }
+          return routeGeo[p.key] ?? null;
+        })
+        .filter(Boolean)
+    : [];
   // Live backend path: while a truck runs a backend-known detour, draw THAT
   // line in GREEN — Google would route straight back through the RED zone it
   // just left, so its primary/alternate are demoted to grey context. Green =
@@ -640,7 +702,7 @@ export default function LiveMap({
   const [livePath, setLivePath] = useState(null);
   const livePathKey =
     pathTarget?.diverted && pathTarget?.status !== "idle"
-      ? `${pathTarget.vehicleId}|${pathTarget.lat.toFixed(2)},${pathTarget.lng.toFixed(2)}`
+      ? `${pathTarget.vehicleId}|${pathTarget.lat.toFixed(3)},${pathTarget.lng.toFixed(3)}`
       : "";
   useEffect(() => {
     if (!livePathKey || !pathTarget) {
@@ -980,8 +1042,8 @@ export default function LiveMap({
 
       {/* Driver guidance strip — "which route do I take" at a glance */}
       {isDriver && showRoutes && (guideGeo || liveForDriver || (driverArrived && driverDest)) && (
-        <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border shadow-sm text-sm ${liveForDriver ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-900 dark:text-emerald-200" : "border-sky-200 bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:border-sky-900 dark:text-sky-200"}`}>
-          <div className={`p-1.5 rounded-lg text-white shrink-0 ${liveForDriver ? "bg-[#16a34a]" : "bg-[#1a73e8]"}`}>
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border shadow-sm text-sm border-sky-200 bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:border-sky-900 dark:text-sky-200">
+          <div className="p-1.5 rounded-lg text-white shrink-0 bg-[#1a73e8]">
             <RouteIcon size={16} />
           </div>
           <div className="flex-1 leading-snug">
@@ -997,7 +1059,7 @@ export default function LiveMap({
                 )}
                 <span className="block text-xs opacity-80">
                   {liveForDriver
-                    ? `Follow the green line — ${clearsText}. Grey is the abandoned road.`
+                    ? `Follow the blue line — ${clearsText}. Grey is the old route.`
                     : displayBanner?.blocked
                       ? "Primary blocked — follow the blue detour."
                       : "Follow the blue line."}{" "}
@@ -1092,7 +1154,7 @@ export default function LiveMap({
               ? { main: r.primary, mainKind: "detour", other: r.abandoned ?? [] }
               : pickRecommended(r, displayBanner?.blocked);
             const isLiveDetour = mainKind === "detour" && r.live;
-            const mainColor = isLiveDetour ? "#16a34a" : "#1a73e8";
+            const mainColor = "#1a73e8"; // always blue — detour or normal route
             const info =
               `${r.label}` +
               (r.distance_km != null ? ` · ${r.distance_km} km` : "") +

@@ -23,15 +23,14 @@ const ROUTES: Record<string, Coordinates[]> = {
 
   'AS-02-MED-11': [
     { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
-    { lng: 92.7926, lat: 26.6339 }, // Tezpur Bypass (NH-15 northern corridor — suggested detour path)
-    { lng: 94.6426, lat: 26.9826 }, // Sivasagar
+    { lng: 93.97, lat: 26.51 }, // via Golaghat
+    { lng: 94.63, lat: 27.14 }, // Sivasagar
   ],
 
   'AS-03-FUEL-07': [
     { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
-    { lng: 92.68, lat: 26.35 }, // via Nagaon
-    { lng: 93.97, lat: 26.51 }, // via Golaghat
-    { lng: 94.6426, lat: 26.9826 }, // Sivasagar
+    { lng: 92.68, lat: 26.35 }, // via Nagaon (waypoint, not a depot)
+    { lng: 94.63, lat: 27.14 }, // Sivasagar
   ],
 
   'AS-04-WATER-09': [
@@ -90,16 +89,20 @@ export function getRemainingPath(vehicleId: string): RemainingPath | null {
 }
 
 const TICK_MS = 2000;
-const POINTS_PER_TRIP = 1500; // Reduced to 1/10th of original 150 speed for realistic transit
+const POINTS_PER_TRIP = 150; //Full trip = approx 5min at 1 point/2s
 const SPEED_KMH = 40;
 const SLOW_KMH = 20; // ML HIGH band: cautious speed instead of a full stop
-const CRAWL_KMH = 10; // ML CRITICAL band: crawl, never a full stop
+const CRAWL_KMH = 10; // ML CRITICAL band: crawl, never a full stop (only real
+// RED incidents stop trucks — FRONTEND_HANDOFF.md §7: "only real RED
+// incidents (15 km radius) can block trucks"). The model predicts CRITICAL
+// for most corridor districts on every scenario date, so a CRITICAL hard
+// stop would freeze the whole fleet permanently on all dates.
 
-// Crash / halt rule: a truck entering BLOCK_RADIUS_KM of a RED incident
-// halts immediately with status='blocked' and speed=0, simulating a crash/blockage.
-// 15 km is deliberately conservative (matches the 15 km threat circles on the
-// Simulation page, PRESENTATION_DECK "Safety Net", and FRONTEND_HANDOFF §7):
-// floodwater moves, so relief trucks must never discover the breach.
+// Step 5 stop rule (temporary brains until Aryan returns): on the active
+// scenario date, a truck entering BLOCK_RADIUS_KM of a RED incident first
+// tries the alternate road (tryDivert — once per date); only when no safe
+// alternate exists does it stop. HIGH never stops (depot guard: KAM-01 sits
+// ~2 km from the depot).
 const BLOCK_RADIUS_KM = 15;
 let activeDate = process.env['SCENARIO_DATE'] ?? '2026-07-28';
 let cachedDate: string | null = null;
