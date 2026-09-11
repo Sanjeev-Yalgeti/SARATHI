@@ -27,6 +27,16 @@ export async function startSimulation() {
   return res.data;
 }
 
+/**
+ * Depot restart on the SAME date (any role, scoped). Every in-scope truck
+ * goes back to Guwahati depot and re-drives from the start — the judge
+ * button. RED stops included: they re-hit honestly. Never changes the date.
+ */
+export async function resetSimulation() {
+  const res = await apiClient.post('/api/simulation/reset');
+  return res.data;
+}
+
 export function isOfflineSimulationError(err) {
   return isNetworkError(err);
 }

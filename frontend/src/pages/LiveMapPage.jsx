@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { Play } from "lucide-react";
+import { Play, RotateCcw } from "lucide-react";
 import StatCard from "../components/StatCard";
 import LiveMap from "../components/LiveMap";
 import apiClient from "../api/client";
-import { startSimulation } from "../api/simulation";
+import { resetSimulation, startSimulation } from "../api/simulation";
 import { isNetworkError } from "../api/auth";
 
 // Every number below comes from a live API response for the map's current
@@ -14,6 +14,7 @@ export default function LiveMapPage({ c, userRole = "ADMIN", currentUser = null 
   const driverVehicleId = currentUser?.id;
   const [mapKey, setMapKey] = useState(0);
   const [starting, setStarting] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [simMsg, setSimMsg] = useState("");
   const [mapDate, setMapDate] = useState("2026-07-28");
   const [incidents, setIncidents] = useState([]);
@@ -38,6 +39,27 @@ export default function LiveMapPage({ c, userRole = "ADMIN", currentUser = null 
       }
     } finally {
       setStarting(false);
+    }
+  }
+
+  // Driver restart: own truck goes back to Guwahati depot and re-drives
+  // the SAME date from the start — the judge reshow button. RED stops
+  // included (they re-hit honestly). Never changes the date.
+  async function handleRestartTrip() {
+    setRestarting(true);
+    setSimMsg("");
+    try {
+      const data = await resetSimulation();
+      setSimMsg(`Restarted from Guwahati — re-driving ${data.scenarioDate}.`);
+      setMapKey((k) => k + 1);
+    } catch (err) {
+      if (isNetworkError(err)) {
+        setSimMsg("Backend offline — start it with ./dev.sh first.");
+      } else {
+        setSimMsg(err.response?.data?.error || "Could not restart trip. Re-login?");
+      }
+    } finally {
+      setRestarting(false);
     }
   }
 
@@ -136,18 +158,30 @@ export default function LiveMapPage({ c, userRole = "ADMIN", currentUser = null 
           </p>
         </div>
 
-        {/* Driver Start Simulation — judges demo entry point */}
+        {/* Driver Start / Restart — judges demo entry points */}
         {isDriver && (
           <div className="flex flex-col items-end gap-2">
-            <button
-              type="button"
-              onClick={handleStartSimulation}
-              disabled={starting}
-              className="px-6 py-3 rounded-full text-white font-bold flex items-center gap-2 cursor-pointer shadow-md hover:opacity-90 disabled:opacity-50 text-sm"
-              style={{ background: c.green || "#0a8754" }}
-            >
-              <Play size={16} /> {starting ? "Starting…" : "Start Simulation"}
-            </button>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <button
+                type="button"
+                onClick={handleStartSimulation}
+                disabled={starting || restarting}
+                className="px-6 py-3 rounded-full text-white font-bold flex items-center gap-2 cursor-pointer shadow-md hover:opacity-90 disabled:opacity-50 text-sm"
+                style={{ background: c.green || "#0a8754" }}
+              >
+                <Play size={16} /> {starting ? "Starting…" : "Start Simulation"}
+              </button>
+              <button
+                type="button"
+                onClick={handleRestartTrip}
+                disabled={starting || restarting}
+                className="px-6 py-3 rounded-full text-white font-bold flex items-center gap-2 cursor-pointer shadow-md hover:opacity-90 disabled:opacity-50 text-sm"
+                style={{ background: c.orange || "#e8672a" }}
+                title="Restart your truck from Guwahati depot on this same date"
+              >
+                <RotateCcw size={16} /> {restarting ? "Restarting…" : "Restart Trip"}
+              </button>
+            </div>
             {simMsg && (
               <span className="text-xs font-medium" style={{ color: c.textMuted }}>
                 {simMsg}

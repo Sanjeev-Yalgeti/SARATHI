@@ -157,6 +157,25 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
     };
   }, [scenarioDate]);
 
+  // Reload: full depot restart on the SAME date (POST /simulation/reset).
+  // Every truck goes back to Guwahati and re-drives from the start —
+  // RED stops included (they re-hit honestly). Never changes the date.
+  const handleReload = async () => {
+    setActionLoading(true);
+    try {
+      const res = await apiClient.post("/api/simulation/reset");
+      setVehicles(res.data.vehicles || []);
+      if (res.data.scenarioDate) setScenarioDate(res.data.scenarioDate);
+      showToast(
+        `Restarted from Guwahati — all trucks re-driving ${res.data.scenarioDate || scenarioDate}.`
+      );
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to reload simulation.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Switch Scenario Date (POST /api/simulation/date)
   const handleSwitchDate = async (newDate) => {
     setActionLoading(true);
@@ -322,14 +341,14 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
             <button
               type="button"
               disabled={actionLoading || !isAdmin}
-              onClick={() => handleSwitchDate(scenarioDate)}
+              onClick={handleReload}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-40"
               style={{
                 background: isAdmin ? "#0a8754" : c.cardBorder,
                 color: "#fff",
                 borderColor: "transparent",
               }}
-              title="Re-post the current date: unblocks RED-stopped trucks and replays the loop from current positions"
+              title="Restart every truck from Guwahati depot on this same date (RED stops re-hit honestly)"
             >
               <RefreshCw size={12} className={actionLoading ? "animate-spin" : ""} />
               Reload Simulation

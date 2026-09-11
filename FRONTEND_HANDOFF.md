@@ -75,6 +75,8 @@ trips, bulletin all filter by the JWT). The frontend only hides tabs.
 | DELETE | `/api/trips/:id` | **admin** | — | `{ deleted: true }` |
 | GET | `/api/simulation/status` | token | — | `{ scenarioDate, vehicles[] }` (driver: own truck) |
 | POST | `/api/simulation/date` | **admin** | `{ date: YYYY-MM-DD }` | `{ scenarioDate, vehicles[] }` — unblocks trucks, replays date |
+| POST | `/api/simulation/start` | token | — | `{ scenarioDate, vehicles[] }` — ensures loop runs, re-drives arrived trucks (driver: own), never unblocks |
+| POST | `/api/simulation/reset` | token | — | `{ scenarioDate, vehicles[] }` — depot restart on same date (admin: fleet, driver: own), RED stops re-hit honestly |
 | POST | `/api/simulation/location` | **admin** | `{ vehicleId, lat, lng, speed? }` — coords inside 21–30N, 89–98E | `{ vehicle }` — mock-GPS ingest, clock resumes from snapped point, never unblocks |
 | GET | `/api/reports?date=` | token | `date` optional | `{ reports: [{ id, lat, lng, type, severity, note, photoUrl, eventDate }] }` |
 | POST | `/api/reports` | token | JSON **or** multipart (`photo` jpg/png ≤5MB) `{ lat, lng, type, severity, note, eventDate }` — coords must be inside 21–30N, 89–98E | `201 { report }` |

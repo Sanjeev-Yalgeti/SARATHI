@@ -689,6 +689,14 @@ recommend alternative routes.
                                       clears RED stops. Requires valid
                                       token.
 
+  POST /api/simulation/reset          Depot restart on the SAME date, any
+                                      role (judge button): in-scope trucks
+                                      return to Guwahati and re-drive from
+                                      the start, RED stops included.
+                                      Admin: fleet; driver: own truck.
+                                      Never changes the date. Requires
+                                      valid token.
+
   POST /api/simulation/date           Admin switches the scenario clock
                                       (unblocks + replays). Admin token
                                       required.

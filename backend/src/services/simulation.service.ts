@@ -204,13 +204,79 @@ export function setScenarioDate(date: string): void {
     }
     truck.diverted = false;
   }
-  for (const p of progress.values()) {
+  for (const [id, p] of progress) {
     p.done = false;
     p.diverted = false;
     p.divertCount = 0;
     p.lastDivertIdx = -MIN_DIVERT_GAP;
     p.cleared = null;
+    const truck = trucks.get(id);
+    // Continue from the current position (re-anchor on the corridor line).
+    restoreCorridorLine(id, p, truck ? { lat: truck.lat, lng: truck.lng } : undefined);
   }
+}
+
+// Put a diverted truck back on its pre-diversion corridor line, re-anchored
+// to a position when one is given (replays restart from the depot; date
+// switches continue from the current position without jumping).
+function restoreCorridorLine(
+  id: string,
+  p: {
+    line: Coordinates[];
+    idx: number;
+    diverted: boolean;
+    baseLine: Coordinates[] | null;
+  },
+  anchor?: { lat: number; lng: number },
+): void {
+  if (p.diverted && p.baseLine && p.baseLine.length > 0) {
+    p.line = p.baseLine;
+  }
+  p.baseLine = null;
+  p.diverted = false;
+  const truck = trucks.get(id);
+  if (truck) truck.diverted = false;
+  if (anchor && p.line.length > 0) {
+    let best = 0;
+    let bestKm = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < p.line.length; i++) {
+      const pt = p.line[i] as Coordinates;
+      const km = haversineKm(anchor.lat, anchor.lng, pt.lat, pt.lng);
+      if (km < bestKm) {
+        bestKm = km;
+        best = i;
+      }
+    }
+    p.idx = best;
+  } else {
+    p.idx = 0;
+  }
+}
+
+// Full depot restart for POST /api/simulation/reset (any role, scoped).
+// Every selected truck goes back to Guwahati depot (idx 0) and re-drives
+// the SAME date from the start — RED stops included (they will re-hit and
+// re-decide honestly). When vehicleId is given, only that truck restarts.
+export function replayFromDepot(vehicleId?: string): Truck[] {
+  for (const [id, p] of progress) {
+    if (vehicleId !== undefined && id !== vehicleId) continue;
+    p.done = false;
+    p.divertCount = 0;
+    p.lastDivertIdx = -MIN_DIVERT_GAP;
+    p.cleared = null;
+    restoreCorridorLine(id, p); // corridor line back, idx 0 = depot
+    const truck = trucks.get(id);
+    if (truck) {
+      const start = p.line[0] as Coordinates | undefined;
+      if (start) {
+        truck.lat = start.lat;
+        truck.lng = start.lng;
+      }
+      truck.status = 'moving';
+      truck.speed = SPEED_KMH;
+    }
+  }
+  return [...trucks.values()];
 }
 
 // Replay helper for POST /api/simulation/start (driver-safe: no date change,
@@ -222,11 +288,10 @@ export function resetCompletedTrips(vehicleId?: string): Truck[] {
     if (!p.done) continue;
     if (vehicleId !== undefined && id !== vehicleId) continue;
     p.done = false;
-    p.diverted = false;
     p.divertCount = 0;
     p.lastDivertIdx = -MIN_DIVERT_GAP;
     p.cleared = null;
-    p.idx = 0;
+    restoreCorridorLine(id, p); // corridor line back, idx 0 = depot
     const truck = trucks.get(id);
     if (truck) {
       // Snap back to the depot immediately so the map + guidance refetch
@@ -320,7 +385,9 @@ export async function fetchRoadLine(waypoints: Coordinates[]): Promise<Coordinat
 //divertCount/lastDivertIdx bound chained diversions (see tryDivert).
 //cleared names the RED incident the active detour was proven against — the
 //map shows it as the detour's proof ("clears Kaziranga breach").
-const progress = new Map<string, { line: Coordinates[]; idx: number; done: boolean; diverted: boolean; divertCount: number; lastDivertIdx: number; cleared: { id: string; road: string | null } | null }>();
+//baseLine keeps the pre-diversion corridor line: replays must restart from
+//the depot, not from the detour's start point mid-map.
+const progress = new Map<string, { line: Coordinates[]; idx: number; done: boolean; diverted: boolean; divertCount: number; lastDivertIdx: number; cleared: { id: string; road: string | null } | null; baseLine: Coordinates[] | null }>();
 
 export async function startSimulation(): Promise<void> {
   if (timer) return;
@@ -342,7 +409,7 @@ export async function startSimulation(): Promise<void> {
         POINTS_PER_TRIP
       );
     }
-    progress.set(vehicleId, { line, idx: 0, done: false, diverted: false, divertCount: 0, lastDivertIdx: -MIN_DIVERT_GAP, cleared: null });
+    progress.set(vehicleId, { line, idx: 0, done: false, diverted: false, divertCount: 0, lastDivertIdx: -MIN_DIVERT_GAP, cleared: null, baseLine: null });
     truck.status = 'moving';
     truck.speed = SPEED_KMH;
     truck.diverted = false;
@@ -452,6 +519,7 @@ async function tick(): Promise<void> {
       if (p.divertCount < MAX_DIVERTS && p.idx - p.lastDivertIdx > MIN_DIVERT_GAP) {
         const detour = await tryDivert(vehicleId, { lat, lng }, hit);
         if (detour) {
+          if (!p.baseLine) p.baseLine = p.line; // keep corridor for replays
           p.line = detour.line;
           p.idx = 0;
           p.diverted = true;

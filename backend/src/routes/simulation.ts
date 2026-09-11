@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
-import { getMlState, getRemainingPath, getScenarioDate, getScenarioOverrides, ingestMockGps, resetCompletedTrips, setScenario, setScenarioDate, startSimulation } from '../services/simulation.service.js';
+import { getMlState, getRemainingPath, getScenarioDate, getScenarioOverrides, ingestMockGps, replayFromDepot, resetCompletedTrips, setScenario, setScenarioDate, startSimulation } from '../services/simulation.service.js';
 import { trucks } from '../services/trucks.js';
 
 const router = Router();
@@ -72,6 +72,23 @@ router.post('/start', async (req: Request, res: Response) => {
   await startSimulation();
   const scope = req.user?.role === 'ADMIN' ? undefined : req.user?.id;
   resetCompletedTrips(scope);
+  if (req.user?.role === 'ADMIN') {
+    res.json(statusPayload([...trucks.values()]));
+    return;
+  }
+  const truck = trucks.get(req.user?.id ?? '');
+  res.json(statusPayload(truck ? [truck] : []));
+});
+
+// POST /api/simulation/reset -> depot restart on the SAME date, any role.
+// The judge button: every in-scope truck goes back to Guwahati depot and
+// re-drives from the start (RED stops included — they re-hit honestly).
+// Admin restarts the whole fleet; driver restarts only their own truck.
+// Never changes the scenario date.
+router.post('/reset', async (req: Request, res: Response) => {
+  await startSimulation();
+  const scope = req.user?.role === 'ADMIN' ? undefined : req.user?.id;
+  replayFromDepot(scope);
   if (req.user?.role === 'ADMIN') {
     res.json(statusPayload([...trucks.values()]));
     return;

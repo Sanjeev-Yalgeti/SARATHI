@@ -14,6 +14,7 @@ import {
   getScenarioDate,
   getScenarioOverrides,
   mlMotionFor,
+  replayFromDepot,
   routeDestination,
   setScenario,
   truckCorridor,
@@ -70,6 +71,15 @@ describe('alternateClearsTrigger (diversion bypass rule)', () => {
 describe('getRemainingPath (live map line)', () => {
   it('returns null for unknown vehicles', () => {
     assert.equal(getRemainingPath('NOPE-00'), null);
+  });
+});
+
+describe('replayFromDepot (judge reset button)', () => {
+  it('returns the fleet without throwing, scoped or not', () => {
+    const all = replayFromDepot();
+    assert.ok(Array.isArray(all) && all.length > 0);
+    const one = replayFromDepot('NOPE-00');
+    assert.ok(Array.isArray(one) && one.length === all.length);
   });
 });
 
