@@ -4,8 +4,8 @@ import { NAV_ITEMS } from "../constants";
 const LightLogo = '/lightLogo.png';
 const DarkLogo = '/darkLogo.png';
 
-// Driver role only sees Live Map, Alerts, and Reports
-const DRIVER_NAV_ITEMS = ["Live Map", "Alerts", "Reports"];
+// Driver role only sees Live Map, Alerts, Reports, and Resources
+const DRIVER_NAV_ITEMS = ["Live Map", "Alerts", "Reports", "Resources"];
 
 export default function TopNav({
     c,

@@ -86,7 +86,7 @@ export default function SarathiApp() {
 
   // Drivers can only access Live Map, Alerts, and Reports
   const isDriver = userRole === "DRIVER" || userRole === "restricted";
-  const driverAllowedPages = ["Live Map", "Alerts", "Reports"];
+  const driverAllowedPages = ["Live Map", "Alerts", "Reports", "Resources"];
 
   const effectiveActive = (isLoggedIn && isDriver && !driverAllowedPages.includes(active))
     ? "Live Map"

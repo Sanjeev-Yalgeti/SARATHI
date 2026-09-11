@@ -5,16 +5,19 @@ const CARDS = [
     title: "Logistics Guidelines",
     desc: "Best practices for logistics operations in NER",
     cta: "Download PDF",
+    pdf: "/Policies-of-the-Logistics-Unit.pdf",
   },
   {
     title: "Emergency SOPs",
     desc: "Standard operating procedures for emergencies",
     cta: "Download PDF",
+    pdf: "/emergency_sop_ner.pdf",
   },
   {
     title: "Driver Handbook",
     desc: "Safety guidelines for drivers",
     cta: "Download PDF",
+    pdf: "/driver_handbook_ner.pdf",
   },
   {
     title: "Training Videos",
@@ -25,11 +28,13 @@ const CARDS = [
     title: "NER Road Atlas",
     desc: "Detailed road map and information",
     cta: "Download PDF",
+    pdf: "/NER States Roadmap.pdf",
   },
   {
     title: "FAQs",
     desc: "Frequently asked questions",
     cta: "View FAQs",
+    pdf: "/State_Road_Atlas_FAQs.pdf"
   },
 ];
 
@@ -56,7 +61,13 @@ export default function ResourcesPage({ c }) {
             <div className="text-sm" style={{ color: c.textMuted }}>
               {card.desc}
             </div>
-            <PillButton c={c}>{card.cta}</PillButton>
+            {card.pdf ? (
+              <a href={card.pdf} download>
+                <PillButton c={c}>{card.cta}</PillButton>
+              </a>
+            ) : (
+              <PillButton c={c}>{card.cta}</PillButton>
+            )}
           </div>
         ))}
       </div>
