@@ -15,6 +15,11 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node -e \"console.error('No dev script at the repo root. Use: cd backend && npm run dev  OR  cd frontend && npm run dev.  Daily runners: ./dev.sh (macOS/Linux) or .\\dev.ps1 (Windows).'); process.exit(1)\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "db:seed": "npm --prefix backend run db:seed",
+    "setup": "node -e \"console.error('No automated setup at the repo root. Use: ./setup.sh (macOS/Linux, Git Bash on Windows) or .\\setup.ps1 (Windows PowerShell).'); process.exit(1)\""
   }
 }
