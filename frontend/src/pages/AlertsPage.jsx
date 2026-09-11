@@ -1,11 +1,8 @@
 import { useState, useEffect } from "react";
 import {
   AlertTriangle,
-  ShieldAlert,
-  Flame,
   Waves,
   Mountain,
-  Download,
   Calendar,
   Filter,
   CheckCircle2,
@@ -99,7 +96,7 @@ const FALLBACK_INCIDENTS = [
   },
 ];
 
-export default function AlertsPage({ c, userRole = "ADMIN", currentUser = null }) {
+export default function AlertsPage({ c }) {
   const [selectedDate, setSelectedDate] = useState("2026-07-28");
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
@@ -218,8 +215,14 @@ export default function AlertsPage({ c, userRole = "ADMIN", currentUser = null }
         </div>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* Fetch failure — honest empty instead of stale cards */}
+      {error && (
+        <div className="mb-6 p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Overview Stat Cards */}      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div
           className="p-4 rounded-2xl border flex flex-col"
           style={{ background: c.cardBg, borderColor: c.cardBorder }}

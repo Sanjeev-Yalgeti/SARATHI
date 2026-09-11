@@ -19,7 +19,6 @@ import {
 } from "../utils/geo";
 
 export default function SubmitReportModal({
-  c,
   isOpen = true,
   onClose,
   onSuccess,

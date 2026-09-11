@@ -5,6 +5,8 @@ const SEED_DRIVERS = [
   { id: "AS-01-FOOD-04", name: "Driver 1 (Food & Rations Truck)" },
   { id: "AS-02-MED-11", name: "Driver 2 (Medical Supplies Truck)" },
   { id: "AS-03-FUEL-07", name: "Driver 3 (Fuel & Energy Truck)" },
+  { id: "AS-04-WATER-09", name: "Driver 4 (Drinking Water Tanker)" },
+  { id: "AS-05-SHELTER-12", name: "Driver 5 (Shelter Kits Truck)" },
 ];
 
 export default function AssignTripModal({ c, onClose, onSubmitTrip }) {

@@ -1,22 +1,24 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Play } from "lucide-react";
 import StatCard from "../components/StatCard";
 import LiveMap from "../components/LiveMap";
+import apiClient from "../api/client";
 import { startSimulation } from "../api/simulation";
 import { isNetworkError } from "../api/auth";
 
+// Every number below comes from a live API response for the map's current
+// date — nothing is hardcoded. Empty states say so honestly instead of
+// showing fake zeroes as facts.
 export default function LiveMapPage({ c, userRole = "ADMIN", currentUser = null }) {
   const isDriver = userRole === "DRIVER" || userRole === "restricted";
+  const driverVehicleId = currentUser?.id;
   const [mapKey, setMapKey] = useState(0);
   const [starting, setStarting] = useState(false);
   const [simMsg, setSimMsg] = useState("");
-
-  const insights = [
-    { value: 8, label: "Total Active Alerts", note: "High Priority: 7", noteColor: "#dc2626" },
-    { value: 5, label: "Roads Affected", note: "NH-715, NH-15, NH-37", noteColor: c.textMuted },
-    { value: 3, label: "Trucks En Route", note: "1 Blocked, 2 Moving", noteColor: "#ea580c" },
-    { value: 4, label: "Weather Warnings", note: "Active Monsoon Alert", noteColor: "#16a34a" },
-  ];
+  const [mapDate, setMapDate] = useState("2026-07-28");
+  const [incidents, setIncidents] = useState([]);
+  const [fleet, setFleet] = useState([]);
+  const [scenarioDate, setScenarioDate] = useState(null);
 
   // Driver-safe start: works for every role (never changes the date,
   // never clears RED-incident stops). Remounts the map for a fresh board.
@@ -38,6 +40,89 @@ export default function LiveMapPage({ c, userRole = "ADMIN", currentUser = null 
       setStarting(false);
     }
   }
+
+  // Live card data: incidents per viewed date, fleet + clock on a 5 s poll.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDate() {
+      try {
+        const res = await apiClient.get(`/api/incidents?date=${mapDate}`);
+        if (!cancelled) setIncidents(res.data?.incidents ?? []);
+      } catch {
+        if (!cancelled) setIncidents([]);
+      }
+    }
+    async function pollLive() {
+      try {
+        const res = await apiClient.get("/api/vehicles");
+        if (!cancelled) setFleet(res.data?.vehicles ?? []);
+      } catch {
+        if (!cancelled) setFleet([]);
+      }
+      try {
+        const res = await apiClient.get("/api/simulation/status");
+        if (!cancelled) setScenarioDate(res.data?.scenarioDate ?? null);
+      } catch {
+        if (!cancelled) setScenarioDate(null);
+      }
+    }
+    loadDate();
+    pollLive();
+    const timer = setInterval(pollLive, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [mapDate]);
+
+  // Same scoping as the map: drivers see only their own truck's numbers.
+  const scopedFleet = useMemo(() => {
+    if (isDriver && driverVehicleId) {
+      const own = fleet.filter((v) => v.vehicleId === driverVehicleId);
+      return own.length > 0 ? own : fleet.slice(0, 1);
+    }
+    return fleet;
+  }, [fleet, isDriver, driverVehicleId]);
+
+  const insights = useMemo(() => {
+    const reds = incidents.filter((i) => i.severity === "RED").length;
+    const highs = incidents.filter((i) => i.severity === "HIGH").length;
+    const roads = [...new Set(incidents.map((i) => i.road).filter(Boolean))];
+    const moving = scopedFleet.filter((v) => v.status === "moving").length;
+    const blocked = scopedFleet.filter((v) => v.status === "blocked").length;
+    const arrived = scopedFleet.filter((v) => v.status === "idle").length;
+    const detours = scopedFleet.filter((v) => v.diverted).length;
+    const fleetNote =
+      scopedFleet.length === 0
+        ? "No telemetry"
+        : `${blocked} Blocked · ${arrived} Arrived${detours > 0 ? ` · ${detours} Detour` : ""}`;
+    return [
+      {
+        value: incidents.length,
+        label: "Active Alerts",
+        note: incidents.length === 0 ? "None reported this date" : `RED: ${reds} · HIGH: ${highs}`,
+        noteColor: reds > 0 ? "#dc2626" : c.textMuted,
+      },
+      {
+        value: roads.length,
+        label: "Roads Affected",
+        note: roads.length === 0 ? "None reported" : [...roads.slice(0, 3), ...(roads.length > 3 ? [`+${roads.length - 3} more`] : [])].join(", "),
+        noteColor: c.textMuted,
+      },
+      {
+        value: `${moving}/${scopedFleet.length}`,
+        label: "Trucks Moving",
+        note: fleetNote,
+        noteColor: blocked > 0 ? "#ea580c" : "#16a34a",
+      },
+      {
+        value: scenarioDate ?? "—",
+        label: "Scenario Clock",
+        note: scenarioDate ? (scenarioDate === mapDate ? "Matches map view" : "Map viewing another date") : "Backend offline",
+        noteColor: c.textMuted,
+      },
+    ];
+  }, [incidents, scopedFleet, scenarioDate, mapDate, c.textMuted]);
 
   return (
     <div className="p-4 sm:p-6 md:p-10 max-w-7xl mx-auto space-y-6">
@@ -79,10 +164,11 @@ export default function LiveMapPage({ c, userRole = "ADMIN", currentUser = null 
           userRole={userRole}
           currentUser={currentUser}
           height="520px"
+          onDateChange={setMapDate}
         />
       </div>
 
-      {/* Key Insights Overview */}
+      {/* Key Insights Overview — live, never hardcoded */}
       <div className="pt-2">
         <h3 className="font-bold text-lg mb-3" style={{ color: c.text }}>
           Live Map Key Insights

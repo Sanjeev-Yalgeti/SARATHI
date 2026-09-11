@@ -33,6 +33,18 @@ const ROUTES: Record<string, Coordinates[]> = {
     { lng: 93.97, lat: 26.51 }, // via Golaghat
     { lng: 94.6426, lat: 26.9826 }, // Sivasagar
   ],
+
+  'AS-04-WATER-09': [
+    { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
+    { lng: 94.2045, lat: 26.7531 }, // via Jorhat (Bhogdoi erosion ASDMA-05)
+    { lng: 94.63, lat: 27.14 }, // Sivasagar relief camp (Dikhow breach ASDMA-06)
+  ],
+
+  'AS-05-SHELTER-12': [
+    { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
+    { lng: 92.5433, lat: 26.16753 }, // via Kakatigaon (flood damage ASDMA-02)
+    { lng: 93.97, lat: 26.51 }, // Golaghat relief camp
+  ],
 };
 
 /** Final corridor waypoint for a truck (its trip destination). */
@@ -40,6 +52,41 @@ export function routeDestination(vehicleId: string): Coordinates | null {
   const waypoints = ROUTES[vehicleId];
   if (!waypoints || waypoints.length === 0) return null;
   return waypoints[waypoints.length - 1] as Coordinates;
+}
+
+/** Full story corridor for a truck (depot → via-points → destination).
+ * Exposed to the frontend via GET /api/vehicles so each truck's map line
+ * bends through its flood-hit towns. Returns a copy; null if unknown. */
+export function truckCorridor(vehicleId: string): Coordinates[] | null {
+  const waypoints = ROUTES[vehicleId];
+  if (!waypoints || waypoints.length === 0) return null;
+  return waypoints.map((p) => ({ ...p }));
+}
+
+export type RemainingPath = {
+  vehicleId: string;
+  diverted: boolean;
+  done: boolean;
+  /** RED incident this detour was proven against (null unless diverted). */
+  cleared: { id: string; road: string | null } | null;
+  /** Road line from the truck's current index to the destination. */
+  remaining: Coordinates[];
+};
+
+/** Live road still ahead of a truck (powers the map's blue line while the
+ * truck runs a backend-known detour Google can't see). Null when unknown. */
+export function getRemainingPath(vehicleId: string): RemainingPath | null {
+  const truck = trucks.get(vehicleId);
+  const p = progress.get(vehicleId);
+  if (!truck || !p || p.line.length === 0) return null;
+  const idx = Math.min(Math.max(p.idx, 0), p.line.length - 1);
+  return {
+    vehicleId,
+    diverted: p.diverted || truck.diverted === true,
+    done: p.done,
+    cleared: p.cleared,
+    remaining: p.line.slice(idx),
+  };
 }
 
 const TICK_MS = 2000;
@@ -159,6 +206,7 @@ export function setScenarioDate(date: string): void {
     p.diverted = false;
     p.divertCount = 0;
     p.lastDivertIdx = -MIN_DIVERT_GAP;
+    p.cleared = null;
   }
 }
 
@@ -174,6 +222,7 @@ export function resetCompletedTrips(vehicleId?: string): Truck[] {
     p.diverted = false;
     p.divertCount = 0;
     p.lastDivertIdx = -MIN_DIVERT_GAP;
+    p.cleared = null;
     p.idx = 0;
     const truck = trucks.get(id);
     if (truck) {
@@ -266,7 +315,9 @@ export async function fetchRoadLine(waypoints: Coordinates[]): Promise<Coordinat
 //destination until a date switch or POST /api/simulation/start replays it.
 //diverted=true means the line is the alternate road after a RED diversion;
 //divertCount/lastDivertIdx bound chained diversions (see tryDivert).
-const progress = new Map<string, { line: Coordinates[]; idx: number; done: boolean; diverted: boolean; divertCount: number; lastDivertIdx: number }>();
+//cleared names the RED incident the active detour was proven against — the
+//map shows it as the detour's proof ("clears Kaziranga breach").
+const progress = new Map<string, { line: Coordinates[]; idx: number; done: boolean; diverted: boolean; divertCount: number; lastDivertIdx: number; cleared: { id: string; road: string | null } | null }>();
 
 export async function startSimulation(): Promise<void> {
   if (timer) return;
@@ -288,7 +339,7 @@ export async function startSimulation(): Promise<void> {
         POINTS_PER_TRIP
       );
     }
-    progress.set(vehicleId, { line, idx: 0, done: false, diverted: false, divertCount: 0, lastDivertIdx: -MIN_DIVERT_GAP });
+    progress.set(vehicleId, { line, idx: 0, done: false, diverted: false, divertCount: 0, lastDivertIdx: -MIN_DIVERT_GAP, cleared: null });
     truck.status = 'moving';
     truck.speed = SPEED_KMH;
     truck.diverted = false;
@@ -390,8 +441,51 @@ async function tick(): Promise<void> {
     const { lng, lat } = p.line[p.idx] as Coordinates;
     const hit = blocks.find((b) => haversineKm(lat, lng, b.lat, b.lng) <= BLOCK_RADIUS_KM);
     if (hit) {
-      // If a truck enters/coincides with areas having issues marked red,
-      // they stop immediately, simulating crash / road blockage.
+      // Divert-first (feat/visual-reform): try the alternate road before
+      // stopping. A plain crash-stop here would silently disable the
+      // diversion engine, detour alerts, and the map's green detour line
+      // (all verified live). Chained diversions are capped and spaced so
+      // one spot can't trigger an API-hammering ping-pong loop.
+      if (p.divertCount < MAX_DIVERTS && p.idx - p.lastDivertIdx > MIN_DIVERT_GAP) {
+        const detour = await tryDivert(vehicleId, { lat, lng }, hit);
+        if (detour) {
+          p.line = detour.line;
+          p.idx = 0;
+          p.diverted = true;
+          p.divertCount += 1;
+          p.lastDivertIdx = 0;
+          // Name the cleared incident for the map's proof label. One DB
+          // read per diversion (rare) — never on the hot tick path.
+          let clearedRoad: string | null = null;
+          try {
+            const info = await prisma.incident.findUnique({
+              where: { id: hit.id },
+              select: { road: true },
+            });
+            clearedRoad = info?.road ?? null;
+          } catch {
+            // DB hiccup — id alone still names the incident honestly.
+          }
+          p.cleared = { id: hit.id, road: clearedRoad };
+          truck.lat = lat;
+          truck.lng = lng;
+          truck.status = 'moving';
+          truck.speed = SLOW_KMH;
+          truck.diverted = true;
+          console.warn(`[sim] ${vehicleId} DIVERTED onto alternate road near ${hit.id} on ${activeDate}`);
+          emitVehicleUpdate(truck);
+          emitDetourAlert({
+            vehicleId,
+            lat,
+            lng,
+            reason: `RED incident ${hit.id} on primary corridor — diverted: ${detour.label}`,
+            incidentId: hit.id,
+            alternateLabel: detour.label,
+            scenarioDate: activeDate,
+          });
+          continue;
+        }
+      }
       truck.lat = lat;
       truck.lng = lng;
       truck.status = 'blocked';
