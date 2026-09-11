@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Play,
   RotateCcw,
+  RefreshCw,
   Truck,
   Waves,
   Calendar,
@@ -318,6 +319,21 @@ export default function SimulationPage({ c, userRole = "ADMIN", currentUser = nu
               {scenarioDate}
             </span>
             <span className="opacity-60">• Tick #{tickCount}</span>
+            <button
+              type="button"
+              disabled={actionLoading || !isAdmin}
+              onClick={() => handleSwitchDate(scenarioDate)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all cursor-pointer disabled:opacity-40"
+              style={{
+                background: isAdmin ? "#0a8754" : c.cardBorder,
+                color: "#fff",
+                borderColor: "transparent",
+              }}
+              title="Re-post the current date: unblocks RED-stopped trucks and replays the loop from current positions"
+            >
+              <RefreshCw size={12} className={actionLoading ? "animate-spin" : ""} />
+              Reload Simulation
+            </button>
           </div>
         </div>
 
