@@ -190,6 +190,20 @@ export default function LoginPage({ setActive, setIsLoggedIn, setUserRole, setCu
               >
                 <b>Driver 3</b> (Fuel truck)
               </button>
+              <button
+                type="button"
+                onClick={() => quickFill('AS-04-WATER-09', 'driver123')}
+                className="px-2.5 py-1.5 border border-cyan-300 bg-cyan-50 text-cyan-800 rounded font-medium hover:bg-cyan-100 transition-colors text-left"
+              >
+                <b>Driver 4</b> (Water tanker)
+              </button>
+              <button
+                type="button"
+                onClick={() => quickFill('AS-05-SHELTER-12', 'driver123')}
+                className="px-2.5 py-1.5 border border-rose-300 bg-rose-50 text-rose-800 rounded font-medium hover:bg-rose-100 transition-colors text-left"
+              >
+                <b>Driver 5</b> (Shelter truck)
+              </button>
             </div>
           </div>
         </div>

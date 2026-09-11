@@ -54,4 +54,38 @@ export const trucks = new Map<string, Truck>([
       cargoType: 'fuel',
     },
   ],
+
+  [
+    // Story: clean-water run into Sivasagar via Jorhat — threads the
+    // Bhogdoi Rightbank erosion (ASDMA-05, Mojia Bheti) and the Dikhow
+    // embankment breach (ASDMA-06, Gohain Gaon). Without SARATHI's
+    // diversion alerts this tanker drives into overtopped road (AUG09-01).
+    'AS-04-WATER-09',
+    {
+      vehicleId: 'AS-04-WATER-09',
+      ...COD_GUWHATI,
+      speed: 0,
+      status: 'idle',
+      origin: 'Guwahati',
+      destination: 'Sivasagar relief camp',
+      cargoType: 'drinking-water',
+    },
+  ],
+
+  [
+    // Story: shelter-kit run to the Golaghat relief camp via Nagaon —
+    // Kakatigaon–Hatigarh flood damage (ASDMA-02) forces the Nagaon
+    // approach when the direct Kaziranga road is breached (ASDMA-01).
+    // Pairs with AS-01-FOOD-04 to show the alternate-road diversion.
+    'AS-05-SHELTER-12',
+    {
+      vehicleId: 'AS-05-SHELTER-12',
+      ...COD_GUWHATI,
+      speed: 0,
+      status: 'idle',
+      origin: 'Guwahati',
+      destination: 'Golaghat relief camp',
+      cargoType: 'tarpaulins+blankets',
+    },
+  ],
 ]);

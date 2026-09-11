@@ -279,6 +279,23 @@ export default function LiveMap({
     }
   }
 
+  // Presenter shortcut for live demos: keys 1/2/3 jump the scenario clock
+  // across Onset → Peak → Relief without hunting for the buttons.
+  // Admin only; ignored while typing in inputs.
+  useEffect(() => {
+    if (userRole === "DRIVER" || userRole === "restricted") return;
+    const dates = ["2026-07-19", "2026-07-28", "2026-08-09"];
+    const onKey = (e) => {
+      const tag = String(e.target?.tagName ?? "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      const idx = ["1", "2", "3"].indexOf(e.key);
+      if (idx !== -1) void handleDateSelect(dates[idx]);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDateSelect reads latest state per press
+  }, [userRole, base]);
+
   // 1. Vehicle Polling (every 2s per FRONTEND_HANDOFF.md §5)
   useEffect(() => {
     let timer = null;
@@ -412,18 +429,45 @@ export default function LiveMap({
   // Heat renders only in analyze mode (drive mode stays Google-clean).
   const showHeat = mode === "analyze" && showHeatmap;
 
-  // A→B route lines: one unique origin→destination pair per visible truck
-  // (drivers see only their own truck → only their own route).
+  // A→B route lines: one per visible truck, following its story corridor
+  // (depot → via-points → destination from GET /api/vehicles) so each
+  // truck's flood-hit towns show on the map. Falls back to plain
+  // origin→destination when a truck carries no corridor.
+  // (Drivers see only their own truck → only their own route.)
   const routePairs = useMemo(() => {
-    const seen = new Map();
+    const out = [];
     for (const v of displayVehicles) {
-      const from = resolvePlace(v.origin);
-      const to = resolvePlace(v.destination);
-      if (!from || !to) continue;
-      const key = `${from.label}→${to.label}`;
-      if (!seen.has(key)) seen.set(key, { key, from, to });
+      const corridor =
+        Array.isArray(v.corridor) && v.corridor.length >= 2 ? v.corridor : null;
+      let from, to, via = [];
+      if (corridor) {
+        from = corridor[0];
+        to = corridor[corridor.length - 1];
+        via = corridor.slice(1, -1);
+      } else {
+        const f = resolvePlace(v.origin);
+        const t = resolvePlace(v.destination);
+        if (!f || !t) continue;
+        from = { lat: f.lat, lng: f.lng };
+        to = { lat: t.lat, lng: t.lng };
+      }
+      out.push({
+        key: v.vehicleId,
+        from: {
+          lat: from.lat,
+          lng: from.lng,
+          label: resolvePlace(v.origin)?.label ?? v.origin,
+        },
+        to: {
+          lat: to.lat,
+          lng: to.lng,
+          label: resolvePlace(v.destination)?.label ?? v.destination,
+        },
+        via,
+        viaKey: via.map((p) => `${p.lat},${p.lng}`).join("|"),
+      });
     }
-    return [...seen.values()];
+    return out;
   }, [displayVehicles]);
   const routePairKeys = routePairs.map((p) => p.key).join("|");
   const fetchedRouteKeys = useRef(new Set());
@@ -437,9 +481,10 @@ export default function LiveMap({
       for (const pair of routePairs) {
         if (fetchedRouteKeys.current.has(pair.key)) continue;
         fetchedRouteKeys.current.add(pair.key);
+        const viaParam = pair.viaKey ? `&via=${pair.viaKey}` : "";
         try {
           const res = await fetch(
-            `${base}/api/routes?from=${pair.from.lat},${pair.from.lng}&to=${pair.to.lat},${pair.to.lng}`,
+            `${base}/api/routes?from=${pair.from.lat},${pair.from.lng}&to=${pair.to.lat},${pair.to.lng}${viaParam}`,
             { headers }
           );
           if (!res.ok) throw new Error(`route ${res.status}`);
@@ -448,7 +493,7 @@ export default function LiveMap({
             Array.isArray(line) ? line.map((pt) => [pt.lat, pt.lng]) : [];
           if (!cancelled) {
             const geo = {
-              label: pair.key,
+              label: `${pair.key} · ${pair.from.label}→${pair.to.label}`,
               primary: toLatLng(data.primary),
               alternate: toLatLng(data.alternate),
               source: data.source ?? "unknown",
@@ -458,14 +503,12 @@ export default function LiveMap({
             setRouteGeo((prev) => (prev[pair.key] ? prev : { ...prev, [pair.key]: geo }));
           }
         } catch {
-          // Offline fallback: straight A→B line so drivers still see their corridor.
+          // Offline fallback: straight corridor line so the truck's story
+          // path still shows (via-points included, not just A→B).
           if (!cancelled) {
             const geo = {
-              label: pair.key,
-              primary: [
-                [pair.from.lat, pair.from.lng],
-                [pair.to.lat, pair.to.lng],
-              ],
+              label: `${pair.key} · ${pair.from.label}→${pair.to.label}`,
+              primary: [pair.from, ...pair.via, pair.to].map((p) => [p.lat, p.lng]),
               alternate: [],
               source: "fallback",
               distance_km: null,
@@ -566,11 +609,8 @@ export default function LiveMap({
     : null;
   const trackedPair = useMemo(() => {
     if (!trackedTruck) return null;
-    const from = resolvePlace(trackedTruck.origin);
-    const to = resolvePlace(trackedTruck.destination);
-    if (!from || !to) return null;
-    return { key: `${from.label}→${to.label}`, from, to };
-  }, [trackedTruck]);
+    return routePairs.find((p) => p.key === trackedTruck.vehicleId) ?? null;
+  }, [trackedTruck, routePairs]);
   const trackedGeo = (() => {
     if (!trackedTruck) return null;
     if (isDriver && guideGeo && trackedTruck.vehicleId === driverTruck?.vehicleId) return guideGeo;
@@ -579,8 +619,9 @@ export default function LiveMap({
   })();
 
   // Live backend path: while a truck runs a backend-known detour, draw THAT
-  // line in blue — Google would route straight back through the RED zone it
-  // just left, so its primary/alternate are demoted to grey context.
+  // line in GREEN — Google would route straight back through the RED zone it
+  // just left, so its primary/alternate are demoted to grey context. Green =
+  // safe passage delivered by the product: bypass-tested, actually driven.
   const pathTarget = isDriver ? driverTruck : trackedTruck;
   const [livePath, setLivePath] = useState(null);
   const livePathKey =
@@ -604,7 +645,13 @@ export default function LiveMap({
         const line = Array.isArray(data.remaining)
           ? data.remaining.map((pt) => [pt.lat, pt.lng])
           : [];
-        if (!cancelled) setLivePath(line.length > 1 ? { vehicleId: data.vehicleId, line } : null);
+        if (!cancelled) {
+          setLivePath(
+            line.length > 1
+              ? { vehicleId: data.vehicleId, line, clears: data.cleared ?? null }
+              : null
+          );
+        }
       } catch {
         if (!cancelled) setLivePath(null);
       }
@@ -616,7 +663,14 @@ export default function LiveMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- livePathKey carries id+position
   }, [base, livePathKey]);
 
-  // Detour view: blue = live backend line, grey = the abandoned Google road.
+  // Named proof for the green line: the exact RED incident this detour was
+  // proven against (road name preferred, id always honest).
+  const clearsText =
+    livePath?.clears?.road || livePath?.clears?.id
+      ? `Clears ${livePath.clears.road ?? livePath.clears.id}`
+      : "Clears the reported RED zone";
+
+  // Detour view: GREEN = live backend line, grey = the abandoned Google road.
   const liveForTracked =
     livePath && trackedTruck && livePath.vehicleId === trackedTruck.vehicleId;
   const liveForDriver =
@@ -625,7 +679,7 @@ export default function LiveMap({
     (liveForDriver ? guideGeo?.primary : liveForTracked ? trackedGeo?.primary : null) ?? [];
   const detourRoute = livePath
     ? {
-        label: `${livePath.vehicleId} · live detour`,
+        label: `${livePath.vehicleId} · SARATHI detour`,
         primary: livePath.line,
         alternate: [],
         abandoned: abandonedLine,
@@ -640,7 +694,27 @@ export default function LiveMap({
     : isDriver
       ? [liveForDriver ? detourRoute : guideGeo].filter(Boolean)
       : displayRoutes;
-  const visiblePairs = trackedId ? (trackedPair ? [trackedPair] : []) : routePairs;
+  // A/B pins: the tracked truck gets its own pair; untracked view shows one
+  // pin per unique place (all trucks share the Guwahati depot, so five
+  // stacked A pins would be one misleading blob).
+  const visiblePins = useMemo(() => {
+    const pairs = trackedId ? (trackedPair ? [trackedPair] : []) : routePairs;
+    const pins = [];
+    for (const p of pairs) {
+      pins.push(
+        { key: `A:${p.key}`, kind: "A", lat: p.from.lat, lng: p.from.lng, label: p.from.label },
+        { key: `B:${p.key}`, kind: "B", lat: p.to.lat, lng: p.to.lng, label: p.to.label }
+      );
+    }
+    if (trackedId) return pins;
+    const seen = new Set();
+    return pins.filter((pin) => {
+      const k = `${pin.kind}:${pin.label}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [trackedId, trackedPair, routePairs]);
   const splitTarget = trackedTruck ?? (isDriver ? driverTruck : null);
   // Fly-to point captured at selection time (not per poll).
   const flyTarget = useMemo(
@@ -668,7 +742,7 @@ export default function LiveMap({
         {/* Scenario Date Switcher */}
         <div className="flex items-center gap-2 text-xs sm:text-sm">
           <Calendar size={16} className="text-[#0a8754] shrink-0" />
-          <span className="font-bold text-gray-700 dark:text-gray-300">
+          <span className="font-bold text-gray-700 dark:text-gray-300" title={isDriver ? undefined : "Presenter shortcut: press 1 / 2 / 3"}>
             {isDriver ? "View date:" : "Scenario Date:"}
           </span>
           <div className="flex items-center bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg">
@@ -892,8 +966,8 @@ export default function LiveMap({
 
       {/* Driver guidance strip — "which route do I take" at a glance */}
       {isDriver && showRoutes && (guideGeo || liveForDriver || (driverArrived && driverDest)) && (
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-sky-200 bg-sky-50 text-sky-900 shadow-sm text-sm dark:bg-sky-950/40 dark:border-sky-900 dark:text-sky-200">
-          <div className="p-1.5 rounded-lg bg-[#1a73e8] text-white shrink-0">
+        <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border shadow-sm text-sm ${liveForDriver ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-900 dark:text-emerald-200" : "border-sky-200 bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:border-sky-900 dark:text-sky-200"}`}>
+          <div className={`p-1.5 rounded-lg text-white shrink-0 ${liveForDriver ? "bg-[#16a34a]" : "bg-[#1a73e8]"}`}>
             <RouteIcon size={16} />
           </div>
           <div className="flex-1 leading-snug">
@@ -901,7 +975,7 @@ export default function LiveMap({
               <>
                 <span className="font-extrabold">
                   {liveForDriver
-                    ? `On detour → ${guideGeo?.destLabel ?? driverDest?.label ?? ""}`
+                    ? `On SARATHI detour → ${guideGeo?.destLabel ?? driverDest?.label ?? ""}`
                     : `Your route → ${guideGeo.destLabel}`}
                 </span>
                 {guideGeo?.distance_km != null && !liveForDriver && (
@@ -909,7 +983,7 @@ export default function LiveMap({
                 )}
                 <span className="block text-xs opacity-80">
                   {liveForDriver
-                    ? "Following the live detour — grey is the abandoned road. (via sim)"
+                    ? `Follow the green line — ${clearsText}. Grey is the abandoned road.`
                     : displayBanner?.blocked
                       ? "Primary blocked — follow the blue detour."
                       : "Follow the blue line."}{" "}
@@ -918,7 +992,7 @@ export default function LiveMap({
               </>
             ) : (
               <>
-                <span className="font-extrabold">Arrived at {driverDest.label} ✓</span>
+                <span className="font-extrabold">Delivered ✓ {driverDest.label}</span>
                 <span className="block text-xs opacity-80">
                   Trip complete — press Start Simulation to replay it for the judges.
                 </span>
@@ -997,12 +1071,14 @@ export default function LiveMap({
           {/* A→B Route Lines — Google-style: remaining blue w/ white casing,
               travelled grey, alternative grey. Alternate wins on blockage.
               Click-to-track isolates the tracked truck's path. A live
-              backend detour always wins: blue = road actually being driven,
-              grey = the abandoned Google road. */}
+              backend detour always wins: GREEN = safe passage actually
+              being driven (bypass-tested), grey = abandoned Google road. */}
           {visibleRoutes.map((r) => {
             const { main, mainKind, other } = r.live
               ? { main: r.primary, mainKind: "detour", other: r.abandoned ?? [] }
               : pickRecommended(r, displayBanner?.blocked);
+            const isLiveDetour = mainKind === "detour" && r.live;
+            const mainColor = isLiveDetour ? "#16a34a" : "#1a73e8";
             const info =
               `${r.label}` +
               (r.distance_km != null ? ` · ${r.distance_km} km` : "") +
@@ -1044,17 +1120,17 @@ export default function LiveMap({
                 {split.remaining.length > 1 && (
                   <Polyline
                     positions={split.remaining}
-                    pathOptions={{ color: "#1a73e8", weight: 5, opacity: 1 }}
+                    pathOptions={{ color: mainColor, weight: 5, opacity: 1 }}
                   >
                     <Tooltip sticky>
                       <span className="font-bold">
-                        {mainKind === "detour"
-                          ? "Live detour"
+                        {isLiveDetour
+                          ? "SARATHI detour"
                           : mainKind === "alternate"
                             ? "Recommended (detour)"
                             : "Recommended"}
                       </span>{" "}
-                      &bull; {info}
+                      &bull; {isLiveDetour ? clearsText : info}
                     </Tooltip>
                   </Polyline>
                 )}
@@ -1064,19 +1140,19 @@ export default function LiveMap({
 
           {/* Google-style source (A) / destination (B) pins per route */}
           {showRoutes &&
-            visiblePairs.map((p) => (
-              <Fragment key={`pins-${p.key}`}>
-                <Marker position={[p.from.lat, p.from.lng]} icon={PIN_A}>
-                  <Tooltip direction="top" offset={[0, -20]} opacity={0.95}>
-                    <span className="font-bold">Source:</span> {p.from.label}
-                  </Tooltip>
-                </Marker>
-                <Marker position={[p.to.lat, p.to.lng]} icon={PIN_B}>
-                  <Tooltip direction="top" offset={[0, -20]} opacity={0.95}>
-                    <span className="font-bold">Destination:</span> {p.to.label}
-                  </Tooltip>
-                </Marker>
-              </Fragment>
+            visiblePins.map((pin) => (
+              <Marker
+                key={pin.key}
+                position={[pin.lat, pin.lng]}
+                icon={pin.kind === "A" ? PIN_A : PIN_B}
+              >
+                <Tooltip direction="top" offset={[0, -20]} opacity={0.95}>
+                  <span className="font-bold">
+                    {pin.kind === "A" ? "Source:" : "Destination:"}
+                  </span>{" "}
+                  {pin.label}
+                </Tooltip>
+              </Marker>
             ))}
 
           {/* Vehicle Markers — click to track a truck's live path */}
@@ -1258,6 +1334,10 @@ export default function LiveMap({
             <div className="flex items-center gap-1.5">
               <span className="w-4 h-1 rounded-full bg-[#1a73e8]" />
               <span>Recommended Route</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-4 h-1 rounded-full bg-[#16a34a]" />
+              <span>Safe Detour (SARATHI)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-4 h-1 rounded-full bg-[#9aa0a6]" />

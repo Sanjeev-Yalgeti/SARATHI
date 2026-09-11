@@ -15,7 +15,8 @@ export type Coordinates = {
 
 // Corridor: Guwahati → Golaghat → Sivasagar via NH27/NH37 (naman_alone.md step 3).
 // OSRM wants lng,lat pairs joined by ';'.
-const ROUTES: Record<string, Coordinates[]> = {  'AS-01-FOOD-04': [
+const ROUTES: Record<string, Coordinates[]> = {
+  'AS-01-FOOD-04': [
     { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
     { lng: 93.97, lat: 26.51 }, // Golaghat relief camp
   ],
@@ -52,10 +53,21 @@ export function routeDestination(vehicleId: string): Coordinates | null {
   return waypoints[waypoints.length - 1] as Coordinates;
 }
 
+/** Full story corridor for a truck (depot → via-points → destination).
+ * Exposed to the frontend via GET /api/vehicles so each truck's map line
+ * bends through its flood-hit towns. Returns a copy; null if unknown. */
+export function truckCorridor(vehicleId: string): Coordinates[] | null {
+  const waypoints = ROUTES[vehicleId];
+  if (!waypoints || waypoints.length === 0) return null;
+  return waypoints.map((p) => ({ ...p }));
+}
+
 export type RemainingPath = {
   vehicleId: string;
   diverted: boolean;
   done: boolean;
+  /** RED incident this detour was proven against (null unless diverted). */
+  cleared: { id: string; road: string | null } | null;
   /** Road line from the truck's current index to the destination. */
   remaining: Coordinates[];
 };
@@ -71,6 +83,7 @@ export function getRemainingPath(vehicleId: string): RemainingPath | null {
     vehicleId,
     diverted: p.diverted || truck.diverted === true,
     done: p.done,
+    cleared: p.cleared,
     remaining: p.line.slice(idx),
   };
 }
@@ -199,6 +212,7 @@ export function setScenarioDate(date: string): void {
     p.diverted = false;
     p.divertCount = 0;
     p.lastDivertIdx = -MIN_DIVERT_GAP;
+    p.cleared = null;
   }
 }
 
@@ -214,6 +228,7 @@ export function resetCompletedTrips(vehicleId?: string): Truck[] {
     p.diverted = false;
     p.divertCount = 0;
     p.lastDivertIdx = -MIN_DIVERT_GAP;
+    p.cleared = null;
     p.idx = 0;
     const truck = trucks.get(id);
     if (truck) {
@@ -306,7 +321,9 @@ export async function fetchRoadLine(waypoints: Coordinates[]): Promise<Coordinat
 //destination until a date switch or POST /api/simulation/start replays it.
 //diverted=true means the line is the alternate road after a RED diversion;
 //divertCount/lastDivertIdx bound chained diversions (see tryDivert).
-const progress = new Map<string, { line: Coordinates[]; idx: number; done: boolean; diverted: boolean; divertCount: number; lastDivertIdx: number }>();
+//cleared names the RED incident the active detour was proven against — the
+//map shows it as the detour's proof ("clears Kaziranga breach").
+const progress = new Map<string, { line: Coordinates[]; idx: number; done: boolean; diverted: boolean; divertCount: number; lastDivertIdx: number; cleared: { id: string; road: string | null } | null }>();
 
 export async function startSimulation(): Promise<void> {
   if (timer) return;
@@ -328,7 +345,7 @@ export async function startSimulation(): Promise<void> {
         POINTS_PER_TRIP
       );
     }
-    progress.set(vehicleId, { line, idx: 0, done: false, diverted: false, divertCount: 0, lastDivertIdx: -MIN_DIVERT_GAP });
+    progress.set(vehicleId, { line, idx: 0, done: false, diverted: false, divertCount: 0, lastDivertIdx: -MIN_DIVERT_GAP, cleared: null });
     truck.status = 'moving';
     truck.speed = SPEED_KMH;
     truck.diverted = false;
@@ -441,6 +458,19 @@ async function tick(): Promise<void> {
           p.diverted = true;
           p.divertCount += 1;
           p.lastDivertIdx = 0;
+          // Name the cleared incident for the map's proof label. One DB
+          // read per diversion (rare) — never on the hot tick path.
+          let clearedRoad: string | null = null;
+          try {
+            const info = await prisma.incident.findUnique({
+              where: { id: hit.id },
+              select: { road: true },
+            });
+            clearedRoad = info?.road ?? null;
+          } catch {
+            // DB hiccup — id alone still names the incident honestly.
+          }
+          p.cleared = { id: hit.id, road: clearedRoad };
           truck.lat = lat;
           truck.lng = lng;
           truck.status = 'moving';

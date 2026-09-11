@@ -16,7 +16,9 @@ import {
   mlMotionFor,
   routeDestination,
   setScenario,
+  truckCorridor,
 } from './simulation.service.js';
+import { getRouteVia } from './routing.service.js';
 
 describe('mlMotionFor (simulation motion rules)', () => {
   // ML never fully stops trucks — only real RED incidents block.
@@ -82,6 +84,46 @@ describe('routeDestination (diversion target)', () => {
 
   it('returns null for unknown vehicles', () => {
     assert.equal(routeDestination('NOPE-00'), null);
+  });
+});
+
+describe('truckCorridor (story path per truck)', () => {
+  it('returns depot → via → destination waypoints per truck', () => {
+    const water = truckCorridor('AS-04-WATER-09');
+    assert.ok(water && water.length === 3);
+    assert.deepEqual(water[0], { lng: 91.7458, lat: 26.1844 });
+    assert.deepEqual(water[1], { lng: 94.2045, lat: 26.7531 }); // Jorhat
+    assert.deepEqual(water[2], { lng: 94.63, lat: 27.14 });
+  });
+
+  it('returns null for unknown vehicles', () => {
+    assert.equal(truckCorridor('NOPE-00'), null);
+  });
+});
+
+describe('getRouteVia (chained story corridors)', () => {
+  // Routers snap endpoints to the nearest road, so assert proximity (~1 km),
+  // not exact equality.
+  const near = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) =>
+    Math.abs(a.lat - b.lat) < 0.01 && Math.abs(a.lng - b.lng) < 0.01;
+
+  it('joins legs end-to-end from depot to destination', async () => {
+    const from = { lat: 26.1844, lng: 91.7458 };
+    const via = [{ lat: 26.75, lng: 94.21 }];
+    const to = { lat: 27.14, lng: 94.63 };
+    const route = await getRouteVia(from, via, to);
+    assert.ok(route.primary.length >= 3);
+    assert.ok(near(route.primary[0]!, from));
+    assert.ok(near(route.primary[route.primary.length - 1]!, to));
+    assert.ok(route.distance_km > 0 && route.duration_min > 0);
+  });
+
+  it('degenerates to a plain route without waypoints', async () => {
+    const from = { lat: 26.1844, lng: 91.7458 };
+    const to = { lat: 26.51, lng: 93.97 };
+    const route = await getRouteVia(from, [], to);
+    assert.ok(near(route.primary[0]!, from));
+    assert.ok(near(route.primary[route.primary.length - 1]!, to));
   });
 });
 

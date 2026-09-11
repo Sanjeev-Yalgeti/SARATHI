@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { getRoute } from '../services/routing.service.js';
+import { getRoute, getRouteVia } from '../services/routing.service.js';
 import { authenticate } from '../middleware/auth.js';
 import { predictRisk } from '../services/risk.service.js';
 import { prisma } from '../services/db.js';
@@ -18,6 +18,7 @@ function parsePoint(raw: unknown): Coordinates | null {
 }
 
 // GET /api/routes?from=26.1844,91.7458&to=26.51,93.97 → primary + stub alternate.
+// Optional &via=lat,lng|lat,lng chains legs (story corridors per truck).
 router.get('/', async (req: Request, res: Response) => {
   const from = parsePoint(req.query['from']);
   const to = parsePoint(req.query['to']);
@@ -25,7 +26,16 @@ router.get('/', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'from and to must be lat,lng' });
     return;
   }
-  res.json(await getRoute(from, to));
+  const viaRaw = req.query['via'];
+  const via =
+    typeof viaRaw === 'string' && viaRaw.length > 0
+      ? viaRaw.split('|').map(parsePoint)
+      : [];
+  if (via.some((p) => p === null)) {
+    res.status(400).json({ error: 'via must be lat,lng|lat,lng' });
+    return;
+  }
+  res.json(await getRouteVia(from, (via as { lat: number; lng: number }[]), to));
 });
 
 function bodyPoint(raw: unknown): Coordinates | null {
