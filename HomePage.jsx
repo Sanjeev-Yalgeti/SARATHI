@@ -77,8 +77,8 @@ export default function HomePage({ c }) {
                 {/* Scroll hint */}
                 {showScrollHint && (
                     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 animate-bounce">
-                        <span className="text-sm font-medium tracking-widest uppercase" style={{ color: c.textMuted }}>Scroll</span>
-                        <ChevronDown size={20} style={{ color: c.textMuted }} />
+                        <span className="text-sm font-bold tracking-widest uppercase" style={{ color: "#00ff00" }}>Scroll</span>
+                        <ChevronDown size={25} style={{ color: c.textMuted }} />
                     </div>
                 )}
             </div>
@@ -135,7 +135,7 @@ export default function HomePage({ c }) {
                                 </div>
                                 {i < steps.length - 1 && (
                                     <div className="flex-shrink-0 flex items-center justify-center px-3 py-4 md:py-0">
-                                        <ArrowRight size={22} style={{ color: c.textMuted }} />
+                                        <ArrowRight size={25} style={{ color: "#00ff00" }} />
                                     </div>
                                 )}
                             </>
