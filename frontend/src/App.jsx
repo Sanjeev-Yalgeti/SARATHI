@@ -98,7 +98,7 @@ export default function SarathiApp() {
       {isLoggedIn && <AlertToasts toasts={toasts} onDismiss={dismiss} />}
       {/* Fixed overlay nav — sits above every page */}
       {effectiveActive !== "Login" && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-transparent pointer-events-none">
+        <div className="fixed top-0 left-0 right-0 z-50 bg-transparent pointer-events-none" style={{ transition: "transform 0.3s ease" }}>
           <TopNav
             c={c}
             active={effectiveActive}

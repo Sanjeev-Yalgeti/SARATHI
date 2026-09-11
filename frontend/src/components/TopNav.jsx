@@ -1,4 +1,5 @@
 import { Moon, Sun, LogOut, Shield, Truck } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { NAV_ITEMS } from "../constants";
 const LightLogo = '/lightLogo.png';
 const DarkLogo = '/darkLogo.png';
@@ -19,9 +20,31 @@ export default function TopNav({
 }) {
     const isDriver = userRole === "DRIVER" || userRole === "restricted";
     const currentNavItems = isDriver ? DRIVER_NAV_ITEMS : NAV_ITEMS;
+    const lastScrollY = useRef(0);
+    const navWrapperRef = useRef(null);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            const currentY = window.scrollY;
+            const wrapper = navWrapperRef.current?.parentElement;
+            if (!wrapper) return;
+
+            if (currentY > lastScrollY.current && currentY > 60) {
+                // Scrolling down — hide
+                wrapper.style.transform = "translateY(-110%)";
+            } else {
+                // Scrolling up or at top — show
+                wrapper.style.transform = "translateY(0)";
+            }
+            lastScrollY.current = currentY;
+        };
+
+        window.addEventListener("scroll", handleScroll, { passive: true });
+        return () => window.removeEventListener("scroll", handleScroll);
+    }, []);
 
     return (
-        <div className="w-full flex items-center justify-between px-6 py-3 bg-transparent pointer-events-auto">
+        <div ref={navWrapperRef} className="w-full flex items-center justify-between px-6 py-3 bg-transparent pointer-events-auto">
             <div
                 className="flex justify-center items-center cursor-pointer"
                 onClick={() => {
