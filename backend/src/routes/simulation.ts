@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
-import { getMlState, getScenarioDate, getScenarioOverrides, ingestMockGps, resetCompletedTrips, setScenario, setScenarioDate, startSimulation } from '../services/simulation.service.js';
+import { getMlState, getRemainingPath, getScenarioDate, getScenarioOverrides, ingestMockGps, resetCompletedTrips, setScenario, setScenarioDate, startSimulation } from '../services/simulation.service.js';
 import { trucks } from '../services/trucks.js';
 
 const router = Router();
@@ -27,6 +27,29 @@ router.get('/status', (req: Request, res: Response) => {
   }
   const truck = trucks.get(req.user?.id ?? '');
   res.json(statusPayload(truck ? [truck] : []));
+});
+
+// GET /api/simulation/path/:vehicleId -> live road still ahead of a truck.
+// Lets the map draw the truck's ACTUAL backend-known line (e.g. a detour
+// Google would route straight back through). Admin: any truck. Driver: own
+// truck only, else 404 (same scoping as /status and /api/vehicles).
+router.get('/path/:vehicleId', (req: Request, res: Response) => {
+  const raw = req.params.vehicleId;
+  const vehicleId = typeof raw === 'string' ? raw : '';
+  if (vehicleId === '') {
+    res.status(400).json({ error: 'vehicleId is required' });
+    return;
+  }
+  if (req.user?.role !== 'ADMIN' && req.user?.id !== vehicleId) {
+    res.status(404).json({ error: 'No vehicle assigned to this driver' });
+    return;
+  }
+  const path = getRemainingPath(vehicleId);
+  if (!path) {
+    res.status(404).json({ error: 'Vehicle not found' });
+    return;
+  }
+  res.json(path);
 });
 
 // POST /api/simulation/date { date: YYYY-MM-DD } -> switch scenario clock.

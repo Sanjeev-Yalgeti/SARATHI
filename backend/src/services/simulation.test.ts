@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   alternateClearsTrigger,
   assessTruckMl,
+  getRemainingPath,
   getMlState,
   getScenarioDate,
   getScenarioOverrides,
@@ -64,11 +65,19 @@ describe('alternateClearsTrigger (diversion bypass rule)', () => {
   });
 });
 
+describe('getRemainingPath (live map line)', () => {
+  it('returns null for unknown vehicles', () => {
+    assert.equal(getRemainingPath('NOPE-00'), null);
+  });
+});
+
 describe('routeDestination (diversion target)', () => {
   it('returns the final corridor waypoint per truck', () => {
     assert.deepEqual(routeDestination('AS-01-FOOD-04'), { lng: 93.97, lat: 26.51 });
     assert.deepEqual(routeDestination('AS-02-MED-11'), { lng: 94.63, lat: 27.14 });
     assert.deepEqual(routeDestination('AS-03-FUEL-07'), { lng: 94.63, lat: 27.14 });
+    assert.deepEqual(routeDestination('AS-04-WATER-09'), { lng: 94.63, lat: 27.14 });
+    assert.deepEqual(routeDestination('AS-05-SHELTER-12'), { lng: 93.97, lat: 26.51 });
   });
 
   it('returns null for unknown vehicles', () => {

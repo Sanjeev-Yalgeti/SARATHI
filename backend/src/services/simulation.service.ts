@@ -31,6 +31,18 @@ const ROUTES: Record<string, Coordinates[]> = {  'AS-01-FOOD-04': [
     { lng: 92.68, lat: 26.35 }, // via Nagaon (waypoint, not a depot)
     { lng: 94.63, lat: 27.14 }, // Sivasagar
   ],
+
+  'AS-04-WATER-09': [
+    { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
+    { lng: 94.2045, lat: 26.7531 }, // via Jorhat (Bhogdoi erosion ASDMA-05)
+    { lng: 94.63, lat: 27.14 }, // Sivasagar relief camp (Dikhow breach ASDMA-06)
+  ],
+
+  'AS-05-SHELTER-12': [
+    { lng: 91.7458, lat: 26.1844 }, // Guwahati depot
+    { lng: 92.5433, lat: 26.16753 }, // via Kakatigaon (flood damage ASDMA-02)
+    { lng: 93.97, lat: 26.51 }, // Golaghat relief camp
+  ],
 };
 
 /** Final corridor waypoint for a truck (its trip destination). */
@@ -38,6 +50,29 @@ export function routeDestination(vehicleId: string): Coordinates | null {
   const waypoints = ROUTES[vehicleId];
   if (!waypoints || waypoints.length === 0) return null;
   return waypoints[waypoints.length - 1] as Coordinates;
+}
+
+export type RemainingPath = {
+  vehicleId: string;
+  diverted: boolean;
+  done: boolean;
+  /** Road line from the truck's current index to the destination. */
+  remaining: Coordinates[];
+};
+
+/** Live road still ahead of a truck (powers the map's blue line while the
+ * truck runs a backend-known detour Google can't see). Null when unknown. */
+export function getRemainingPath(vehicleId: string): RemainingPath | null {
+  const truck = trucks.get(vehicleId);
+  const p = progress.get(vehicleId);
+  if (!truck || !p || p.line.length === 0) return null;
+  const idx = Math.min(Math.max(p.idx, 0), p.line.length - 1);
+  return {
+    vehicleId,
+    diverted: p.diverted || truck.diverted === true,
+    done: p.done,
+    remaining: p.line.slice(idx),
+  };
 }
 
 const TICK_MS = 2000;
