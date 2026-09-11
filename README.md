@@ -40,6 +40,12 @@ npm install
 npm run dev -- --port 5173   # VITE_API_URL=http://localhost:5001 is preset
 ```
 
+> **Windows (PowerShell)?** Don't run the `.sh` scripts and don't run
+> `npm run dev` from the repo root (root has no `dev` script — it prints a
+> hint). One-time setup: `.\setup.ps1`. Daily run: `.\dev.ps1`. If scripts
+> are blocked: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+> Git Bash users can use `./setup.sh` + `./dev.sh` instead.
+
 ### Log in and demo (3 minutes)
 
 | userId            | password    | role   | sees                                             |
@@ -79,6 +85,8 @@ cd backend/disaster-ml && python3 -m pytest -q   # 93 passed
 | 403 on Trips/Simulation as driver | correct — admin-only; hidden for drivers |
 | CORS error in browser | backend `CORS_ORIGIN` must include the frontend origin |
 | Port 5001 in use | a stale server is running: `lsof -i :5001`, kill it, restart |
+| `./dev.sh` not recognized (PowerShell) | `.sh` is bash — on Windows use `.\dev.ps1` (and `.\setup.ps1` for setup) |
+| `Missing script: "dev"` at repo root | `dev` lives in `backend/` and `frontend/` only — `cd backend` / `cd frontend` first |
 | Map tiles don't load | internet needed for OSM tiles (app shell works offline) |
 
 ### Repo map & deeper docs
